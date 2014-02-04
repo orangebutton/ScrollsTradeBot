@@ -9,12 +9,13 @@ import (
 )
 
 type State struct {
-	con             net.Conn
-	chQuit          chan bool
-	chMessages      chan Message
-	chListeners     chan Listener
-	chTradeStatus   chan TradeStatus
-	chTradeResponse chan bool
+	con              net.Conn
+	chQuit           chan bool
+	chMessages       chan Message
+	chAddListener    chan Listener
+	chRemoveListener chan Listener
+	chTradeStatus    chan TradeStatus
+	chTradeResponse  chan bool
 }
 
 type Player string
@@ -37,39 +38,36 @@ var (
 
 func InitState(con net.Conn) *State {
 	s := State{con: con}
-	s.chQuit = make(chan bool, 1)
-	s.chMessages = make(chan Message)
-	s.chListeners = make(chan Listener)
-	s.chTradeStatus = make(chan TradeStatus)
-	s.chTradeResponse = make(chan bool)
+	s.chQuit = make(chan bool, 5)
+	s.chMessages = make(chan Message, 1)
+	s.chAddListener = make(chan Listener, 1)
+	s.chRemoveListener = make(chan Listener, 1)
+	s.chTradeStatus = make(chan TradeStatus, 1)
+	s.chTradeResponse = make(chan bool, 1)
 	s.SendRequest(Request{"msg": "JoinLobby"})
 
 	go func() {
-		listeners := make([]Listener, 0)
+		recv := make([]Listener, 0)
 
 		for {
 			select {
 			case <-s.chQuit:
-				for _, l := range listeners {
+				for _, l := range recv {
 					close(l)
 				}
 				s.chQuit <- true
 				return
-			case newListener := <-s.chListeners:
-				listeners = append(listeners, newListener)
-				// log.Printf("new listener!")
-			case m := <-s.chMessages:
-				// log.Printf("%d listeners", len(listeners))
-				for i, l := range listeners {
-					select {
-					case l <- m:
-					default:
-						// log.Printf("one listener is full, removing it (%d remaining)", len(listeners)-1)
-						if i < len(listeners)-1 {
-							copy(listeners[i:], listeners[i+1:])
-						}
-						listeners = listeners[:len(listeners)-1]
+			case l := <-s.chAddListener:
+				recv = append(recv, l)
+			case l := <-s.chRemoveListener:
+				for i, listener := range recv {
+					if listener == l {
+						recv[i], recv = recv[len(recv)-1], recv[:len(recv)-1]
 					}
+				}
+			case m := <-s.chMessages:
+				for _, l := range recv {
+					l <- m
 				}
 			}
 		}
@@ -81,19 +79,36 @@ func InitState(con net.Conn) *State {
 func (s *State) SendRequest(req Request) {
 	log.Printf("-> %s\n", req)
 	SendRequest(s.con, req)
+	if r := recover(); r != nil {
+		s.chQuit <- true
+	}
 }
 
 func (s *State) Listen() Listener {
-	l := make(Listener, 10)
-	s.chListeners <- l
+	l := make(Listener, 1)
+	s.chAddListener <- l
 	return l
+}
+
+func (s *State) Shut(l Listener) {
+	s.chRemoveListener <- l
 }
 
 func (s *State) JoinRoom(room Channel) {
 	s.SendRequest(Request{"msg": "RoomEnter", "roomName": room})
-	for m := range s.Listen() {
-		if m.Channel == room {
+	timeout := time.After(5 * time.Second)
+
+	l := s.Listen()
+	defer s.Shut(l)
+
+	for {
+		select {
+		case <-timeout:
 			return
+		case m := <-l:
+			if m.Channel == room {
+				return
+			}
 		}
 	}
 }
@@ -103,24 +118,30 @@ func (s *State) LeaveRoom(room Channel) {
 }
 
 func (s *State) Say(room Channel, text string) {
-	s.SendRequest(Request{"msg": "RoomChatMessage", "text": text, "roomName": room})
-	timeout := time.After(2 * time.Second)
-	for {
-		select {
-		case m := <-s.Listen():
-			if m.Channel == room && m.From == Bot && m.Text == text {
-				return
-			}
+	// l := s.Listen()
+	// defer s.Shut(l)
 
-			// if m.From == "Scrolls" && m.Text == "You have been temporarily muted (for flooding the chat or by a moderator)." {
-			// 	time.Sleep(time.Second)
-			// 	s.SendRequest(Request{"msg": "RoomChatMessage", "text": text, "roomName": room})
-			// }
-		case <-timeout:
-			log.Println("!!!MESSAGE TIMEOUT!!!")
-			return
-		}
-	}
+	s.SendRequest(Request{"msg": "RoomChatMessage", "text": text, "roomName": room})
+	// timeout := time.After(50 * time.Second)
+
+	// for {
+	// 	select {
+	// 	case m := <-l:
+	// 		if m.Channel == room && m.From == Bot && m.Text == text {
+	// 			log.Printf("Correct message!")
+	// 			return
+	// 		} else {
+	// 			log.Printf("Wrong message: %s", m)
+	// 		}
+	// 		// if m.From == "Scrolls" && m.Text == "You have been temporarily muted (for flooding the chat or by a moderator)." {
+	// 		// 	time.Sleep(time.Second)
+	// 		// 	s.SendRequest(Request{"msg": "RoomChatMessage", "text": text, "roomName": room})
+	// 		// }
+	// 	case <-timeout:
+	// 		log.Println("!!!MESSAGE TIMEOUT!!!")
+	// 		return
+	// 	}
+	// }
 }
 
 func (s *State) Whisper(player Player, text string) {

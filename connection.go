@@ -39,6 +39,7 @@ func ListenTo(url string) (net.Conn, chan []byte) {
 			bytesRead, err := con.Read(readBuffer)
 			if err != nil {
 				close(ch)
+				log.Printf("ListenTo connection error: %s", err)
 				return
 			}
 			replyBuffer.Write(readBuffer[:bytesRead])
@@ -115,7 +116,7 @@ func getLoginToken(email, password string) Request {
 
 func Connect(email, password string) (*State, chan bool) {
 	con, ch := ListenTo(getLobbyURL())
-	chAlive := make(chan bool)
+	chAlive := make(chan bool, 1)
 
 	SendRequest(con, Request{
 		"msg":         "FirstConnect",
@@ -129,22 +130,17 @@ func Connect(email, password string) (*State, chan bool) {
 		ping := time.Tick(time.Second * 15)
 		for {
 			select {
-			case <-ping:
-				state.SendRequest(Request{"msg": "Ping"})
-			case reply := <-ch:
-				go func() {
-					if !state.HandleReply(reply) {
-						state.chQuit <- true
-					} else {
-						select {
-						case chAlive <- true:
-						default:
-						}
-					}
-				}()
 			case <-state.chQuit:
 				log.Printf("QUIT")
 				return
+			case <-ping:
+				state.SendRequest(Request{"msg": "Ping"})
+			case reply := <-ch:
+				if state.HandleReply(reply) {
+					chAlive <- true
+				} else {
+					state.chQuit <- true
+				}
 			}
 		}
 	}()
