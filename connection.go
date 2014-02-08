@@ -12,7 +12,7 @@ import (
 
 type Request map[string]interface{}
 
-func SendRequest(con net.Conn, req Request) {
+func SendRequest(con net.Conn, req Request) bool {
 	reqMarshaled, err := json.Marshal(req)
 	if err != nil {
 		panic(err)
@@ -20,8 +20,9 @@ func SendRequest(con net.Conn, req Request) {
 
 	_, err = con.Write(reqMarshaled)
 	if err != nil {
-		panic(err)
+		return false
 	}
+	return true
 }
 
 func ListenTo(url string) (net.Conn, chan []byte) {

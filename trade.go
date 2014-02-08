@@ -36,6 +36,10 @@ type TradeStatus struct {
 	}
 }
 
+func GoldForTrade() int {
+	return Gold / 5
+}
+
 func LoadPrices() {
 	lowerPrices := make(map[string]int)
 	upperPrices := make(map[string]int)
@@ -100,7 +104,7 @@ func MinimumValue(card string) int {
 
 func BaseValue(card string) int {
 	startTime := time.Date(2014, 2, 4, 17, 0, 0, 0, time.UTC)
-	endTime := time.Date(2014, 2, 16, 17, 0, 0, 0, time.UTC)
+	endTime := time.Date(2014, 2, 30, 17, 0, 0, 0, time.UTC)
 	now := time.Now()
 
 	f := float64(now.Unix()-startTime.Unix()) / float64(endTime.Unix()-startTime.Unix())
@@ -145,12 +149,13 @@ func (s *State) DeterminePrice(card string, num int, buy bool) int {
 
 	for i := 0; i < num; i++ {
 		if buy {
-			price += int(math.Max(float64(MinimumValue(card)), expify(card, stocked)))
+			goldFactor := math.Min(float64(Gold), 10000.0)/20000.0 + 0.5
+			price += int(math.Max(float64(MinimumValue(card)), expify(card, stocked)*goldFactor))
 			stocked++
 
 		} else {
 			stocked--
-			price += int(math.Max(float64(MinimumValue(card)), expify(card, stocked)) * 1.15)
+			price += int(math.Max(float64(MinimumValue(card)), expify(card, stocked)*1.15))
 		}
 	}
 	return price
@@ -237,7 +242,7 @@ func (s *State) InitiateTrade(player Player, timeout time.Duration) chan TradeSt
 
 func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 	// Send them a trade invite and see if they accept
-	chTradeStatus := s.InitiateTrade(tradePartner, 30*time.Second)
+	chTradeStatus := s.InitiateTrade(tradePartner, 40*time.Second)
 	if chTradeStatus != nil {
 		defer s.LeaveRoom(TradeRoom)
 		lastActivity := time.Now()
@@ -269,7 +274,7 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 				}
 			}
 			s.SendRequest(Request{"msg": "TradeAddCards", "cardIds": cardIds})
-			s.Say(TradeRoom, "I've initialized the trade room with your last WTB request.")
+			s.Say(TradeRoom, "I've initialized the trade room with your last WTB request. You can !reset to undo this.")
 		}
 
 		messages := s.Listen()
@@ -290,13 +295,25 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 							" and I'll add everything I have on that list. You can also !add or !remove single cards."+
 							" Not sure about the gold? Just ask for the !price and I'll list it up.")
 
-						if command == "!donation" {
-							donation = !donation
-							if !donation {
-								s.Say(TradeRoom, "I will consider everything you put into this trade as a donation. Much appreciated!"+
-									" If you change your mind, just repeat the command.")
-							} else {
-								s.Say(TradeRoom, "Okay :(")
+					} else if command == "!donation" {
+						donation = !donation
+						if donation {
+							s.Say(TradeRoom, "I will consider everything you put into this trade as a donation. Much appreciated!"+
+								" If you change your mind, just repeat the command.")
+						} else {
+							s.Say(TradeRoom, "Okay :(")
+						}
+
+					} else if command == "!reset" {
+						for cardName, num := range ts.My.Cards {
+							for _, card := range Libraries[Bot].Cards {
+								if CardTypes[CardId(card.TypeId)] == cardName && card.Tradable {
+									s.SendRequest(Request{"msg": "TradeRemoveCard", "cardId": card.Id})
+									num--
+									if num <= 0 {
+										break
+									}
+								}
 							}
 						}
 
@@ -350,11 +367,9 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 						s.Say(m.Channel, msg)
 
 					} else if strings.HasPrefix(command, "!add") || strings.HasPrefix(command, "!wtb") || strings.HasPrefix(command, "wtb") {
-						cardlist := strings.Replace(command, "!add", "", 1)
-						cardlist = strings.Replace(cardlist, "!wtb", "", 1)
-						if strings.HasPrefix(cardlist, "wtb") {
-							cardlist = strings.Replace(cardlist, "wtb", "", 1)
-						}
+						cardlist := strings.TrimPrefix(command, "!add")
+						cardlist = strings.TrimPrefix(cardlist, "!wtb")
+						cardlist = strings.TrimPrefix(cardlist, "wtb")
 
 						cardIds := make([]int, 0)
 
@@ -403,7 +418,7 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 						s.Say(TradeRoom, "You have to name the card that I will remove.")
 
 					} else if strings.HasPrefix(command, "!remove") {
-						cardName := matchCardName(strings.Replace(command, "!remove ", "", 1))
+						cardName := matchCardName(strings.TrimPrefix(command, "!remove "))
 						_, ok := Stocks[Bot][cardName]
 
 						alreadyOffered := ts.My.Cards[cardName]
@@ -473,8 +488,11 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 					}
 					if len(cardIds) > 0 {
 						s.SendRequest(Request{"msg": "SellCards", "cardIds": cardIds})
-						s.SendRequest(Request{"msg": "ProfileDataInfo"})
-						s.SendRequest(Request{"msg": "LibraryView"})
+						for id := range cardIds {
+							name := CardTypes[CardId(id)]
+							Stocks[Bot][name] = Stocks[Bot][name] - 1
+							Gold += MinimumValue(name)
+						}
 					}
 					logTrade(ts)
 					return
@@ -494,7 +512,7 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 
 				goldNeeded := ts.Their.Value - ts.My.Value + ts.Their.Gold
 				if goldNeeded != ts.My.Gold {
-					if goldNeeded > 0 && Gold >= goldNeeded {
+					if goldNeeded > 0 && GoldForTrade() >= goldNeeded {
 						s.SendRequest(Request{"msg": "TradeSetGold", "gold": goldNeeded})
 					} else if ts.My.Gold != 0 {
 						s.SendRequest(Request{"msg": "TradeSetGold", "gold": 0})
@@ -529,8 +547,8 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 					cardsChanged = false
 
 					value := ts.Their.Value - ts.My.Value
-					if value > Gold && !donation {
-						s.Say(TradeRoom, fmt.Sprintf("Sorry - I only have %d gold at my disposal. Please take something out. Or is this a !donation?", Gold))
+					if value > GoldForTrade() && !donation {
+						s.Say(TradeRoom, fmt.Sprintf("Sorry - I only have %d gold at my disposal. Please take something out. Or is this a !donation?", GoldForTrade()))
 					} else if value < 0 {
 						s.Say(TradeRoom, fmt.Sprintf("Please set your gold offer to %dg", -value))
 					}
@@ -538,14 +556,16 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 
 				myGain := ts.Their.Value + ts.Their.Gold
 				theirGain := ts.My.Value + ts.My.Gold
-				canAccept := true
+				canAccept := false
 
-				if myGain > theirGain && myGain > 0 {
+				if myGain >= theirGain && myGain > 0 {
 					canAccept = true
 					if !donation {
 						canAccept = myGain == theirGain
 					}
 				}
+
+				// s.Say(TradeRoom, fmt.Sprintf("%d %d %s %s", myGain, theirGain, canAccept, donation))
 
 				if canAccept && !ts.My.Accepted && time.Now().After(lastActivity.Add(time.Second*7)) {
 					s.SendRequest(Request{"msg": "TradeAcceptBargain"})

@@ -31,7 +31,8 @@ func main() {
 	log.SetOutput(f)
 	// log.SetOutput(ioutil.Discard)
 
-	startBot("I live again!")
+	// startBot("I live again!")
+	startBot("")
 }
 
 func startBot(helloMessage string) {
@@ -69,37 +70,70 @@ func startBot(helloMessage string) {
 				return
 
 			case <-chReadyToTrade:
-				if len(queue) > 0 {
+				if len(queue) == 0 {
+					s.Say("clockwork", "Finished trading.")
+					currentlyTrading = false
+				} else {
 					currentlyTrading = true
+
 					go func() {
+						waiting := make([]string, len(queue)-1)
+						for i, name := range queue[1:] {
+							waiting[i] = string(name)
+						}
+						if len(waiting) > 0 {
+							s.Say("clockwork", fmt.Sprintf("Now trading with [%s] < %s", queue[0], strings.Join(waiting, " < ")))
+						} else {
+							s.Say("clockwork", fmt.Sprintf("Now trading with [%s].", queue[0]))
+						}
+
 						stockBefore := Stocks[Bot]
+						if stockBefore == nil {
+							stockBefore = make(map[string]int)
+						}
+
 						ts := s.Trade(queue[0])
-						for card, _ := range ts.Their.Cards {
+
+						aquired := make([]string, 0)
+						lost := make([]string, 0)
+						for card, num := range ts.Their.Cards {
 							if stockBefore[card] == 0 {
-								s.Say("clockwork", fmt.Sprintf("I've just aquired %s.", card))
-								stockBefore[card] = 1
+								aquired = append(aquired, card)
 							}
+							stockBefore[card] = stockBefore[card] + num
+						}
+						for card, num := range ts.My.Cards {
+							if stockBefore[card] <= num {
+								lost = append(lost, card)
+							}
+							stockBefore[card] = stockBefore[card] - num
+						}
+						if len(aquired) > 0 {
+							s.Say("clockwork", fmt.Sprintf("I've just aquired %s.", strings.Join(aquired, ", ")))
+						}
+						if len(lost) > 0 {
+							s.Say("clockwork", fmt.Sprintf("I've just sold my last %s.", strings.Join(lost, ", ")))
 						}
 
 						queue = queue[1:]
-						if len(queue) > 0 {
-							s.Say("clockwork", fmt.Sprintf("Finished trading. %d more in line. Next one is %s.", len(queue), queue[0]))
-						} else {
-							s.Say("clockwork", "Finished trading.")
-							currentlyTrading = false
-						}
 						chReadyToTrade <- true
 					}()
 				}
 
 			case m := <-messages:
 				if m.From == "redefiance" && strings.HasPrefix(m.Text, "!say ") {
-					s.Say("clockwork", strings.Replace(m.Text, "!say ", "", 1))
+					s.Say("clockwork", strings.TrimPrefix(m.Text, "!say "))
 				}
 
 				forceWhisper := false
 				replyMsg := ""
 				command := strings.ToLower(m.Text)
+
+				// if m.From != "redefiance" {
+				if m.From == "Great_Marcoosai" {
+					command = "" // banned!
+
+				}
 
 				if strings.HasPrefix(command, "wt") {
 					command = strings.Replace(command, "wt", "!wt", 1)
@@ -115,7 +149,7 @@ func startBot(helloMessage string) {
 				}
 
 				if strings.HasPrefix(command, "!wts ") && m.Channel != TradeRoom {
-					cards, failedWords := parseCardList(strings.Replace(command, "!wts ", "", 1))
+					cards, failedWords := parseCardList(strings.TrimPrefix(command, "!wts "))
 					if len(cards) > 0 {
 						words := make([]string, 0, len(cards))
 						goldSum := 0
@@ -125,14 +159,14 @@ func startBot(helloMessage string) {
 							if num != 1 {
 								numStr = fmt.Sprintf("%dx ", num)
 							}
-							words = append(words, fmt.Sprintf("%dg for %s%s", gold, numStr, card))
+							words = append(words, fmt.Sprintf("%s%s %d", numStr, card, gold))
 							goldSum += gold
 						}
 
 						s1, s2, s3, s4 := "will", "", "", ""
-						if goldSum > Gold {
+						if goldSum > GoldForTrade() {
 							s1 = "would"
-							s3 = fmt.Sprintf(" I currently only have %dg.", Gold)
+							s3 = fmt.Sprintf(" I currently only have %dg.", GoldForTrade())
 						}
 						if len(words) > 1 {
 							s2 = fmt.Sprintf(" That sums up to %dg.", goldSum)
@@ -147,7 +181,7 @@ func startBot(helloMessage string) {
 				}
 
 				if strings.HasPrefix(command, "!wtb ") && m.Channel != TradeRoom {
-					cards, failedWords := parseCardList(strings.Replace(command, "!wtb ", "", 1))
+					cards, failedWords := parseCardList(strings.TrimPrefix(command, "!wtb "))
 					WTBrequests[m.From] = cards
 					if len(cards) > 0 {
 						words := make([]string, 0, len(cards))
@@ -171,7 +205,7 @@ func startBot(helloMessage string) {
 							if forceNumStr || num != 1 {
 								numStr = fmt.Sprintf("%dx ", num)
 							}
-							words = append(words, fmt.Sprintf("%dg for %s%s", gold, numStr, card))
+							words = append(words, fmt.Sprintf("%s%s %d", numStr, card, gold))
 							goldSum += gold
 						}
 
@@ -206,7 +240,7 @@ func startBot(helloMessage string) {
 				}
 
 				if strings.HasPrefix(command, "!price ") || strings.HasPrefix(command, "!stock ") {
-					cardName := matchCardName(strings.Replace(strings.Replace(command, "!stock ", "", 1), "!price ", "", 1))
+					cardName := matchCardName(strings.TrimPrefix(strings.TrimPrefix(command, "!stock "), "!price "))
 					stocked, ok := Stocks[Bot][cardName]
 					if !ok {
 						replyMsg = "There is no card named '" + cardName + "'"
@@ -214,7 +248,7 @@ func startBot(helloMessage string) {
 						if stocked == 0 {
 							price := s.DeterminePrice(cardName, 1, true)
 							replyMsg = cardName + " is out of stock. "
-							if price > Gold {
+							if price > GoldForTrade() {
 								replyMsg += fmt.Sprintf("I would buy for %dg, but I don't have that much (base value %dg).", price, BaseValue(cardName))
 							} else {
 								replyMsg += fmt.Sprintf("I'm buying for %dg (base value %dg).", price, BaseValue(cardName))
@@ -229,6 +263,17 @@ func startBot(helloMessage string) {
 					if rand.Float64() > 0.95 {
 						replyMsg += " By the way, you can whisper me with 'wtb/wts [list of cards]' to easily check prices and availability for all cards you're interested in."
 					}
+				}
+
+				if command == "!missing" {
+					list := make([]string, 0)
+					for _, card := range CardTypes {
+						if Stocks[Bot][card] == 0 {
+							list = append(list, card)
+						}
+					}
+					replyMsg = fmt.Sprintf("I currently don't have %s. I'm paying extra for that!", strings.Join(list, ", "))
+					forceWhisper = true
 				}
 
 				if command == "!stock" {
@@ -257,7 +302,7 @@ func startBot(helloMessage string) {
 					totalValue += Gold
 
 					replyMsg = fmt.Sprintf("I have %d commons, %d uncommons and %d rares. That's %d%% of all card types, as well as %d gold. Total value is %dk gold.",
-						commons, uncommons, rares, 100*len(uniques)/len(CardTypes), Gold, int(totalValue/1000))
+						commons, uncommons, rares, 100*len(uniques)/len(CardTypes), GoldForTrade(), int(totalValue/1000))
 				}
 
 				if command == "!help" && m.Channel != TradeRoom {
@@ -312,12 +357,13 @@ func startBot(helloMessage string) {
 		}
 
 		chKillThread <- true
+		log.Print("Restarting in 5..")
 		time.Sleep(time.Second * 5)
 		startBot("I live again!")
 	}()
 
 	for {
-		timeout := time.After(time.Minute * 2)
+		timeout := time.After(time.Minute * 1)
 		ticker := time.Tick(30 * time.Second)
 	InnerLoop:
 		for {

@@ -78,8 +78,7 @@ func InitState(con net.Conn) *State {
 
 func (s *State) SendRequest(req Request) {
 	log.Printf("-> %s\n", req)
-	SendRequest(s.con, req)
-	if r := recover(); r != nil {
+	if !SendRequest(s.con, req) {
 		s.chQuit <- true
 	}
 }
