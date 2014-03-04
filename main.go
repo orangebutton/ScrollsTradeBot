@@ -2,11 +2,9 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
-	"os"
 	"regexp"
 	"strings"
 	"time"
