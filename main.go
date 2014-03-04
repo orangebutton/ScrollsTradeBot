@@ -21,7 +21,6 @@ var WTBrequests = make(map[Player]map[Card]int)
 var Bot Player
 
 func main() {
-
 	// Logging..
 	//f, err := os.OpenFile("system.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	//deny(err)
@@ -200,66 +199,65 @@ func startBot(email, password, helloMessage string) {
 				if strings.HasPrefix(command, "!wtb ") && m.Channel != TradeRoom {
 					cards, ambiguousWords, failedWords := parseCardList(strings.TrimPrefix(command, "!wtb "))
 					WTBrequests[m.From] = cards
-					if len(cards) > 0 {
-						words := make([]string, 0, len(cards))
-						numItems := 0
-						goldSum := 0
-						hasAll := true
-						for card, num := range cards {
-							forceNumStr := false
-							numItems += num
-							if stocked := Stocks[Bot][card]; num > stocked {
-								num = stocked
-								hasAll = false
-								forceNumStr = true
-								if num == 0 {
-									continue
-								}
-							}
+					words := make([]string, 0, len(cards))
+					goldSum := 0
+					hasAll := true
+					numItems := 0
 
-							gold := s.DeterminePrice(card, num, false)
-							numStr := ""
-							if forceNumStr || num != 1 {
-								numStr = fmt.Sprintf("%dx ", num)
-							}
-							words = append(words, fmt.Sprintf("%s%s %d", numStr, card, gold))
-							goldSum += gold
-						}
-
-						s1, s2, s3 := "", "", ""
-						if !hasAll {
-							s1 = " That's all I have."
-						}
-						if len(words) > 1 {
-							s2 = fmt.Sprintf(" That sums up to %dg.", goldSum)
-						}
-						if len(failedWords) > 0 {
-							s3 = fmt.Sprintf(" I don't know what '%s' is.", strings.Join(failedWords, ", "))
-						}
-
-						if len(ambiguousWords) > 0 {
-							for _, word := range ambiguousWords {
-								s3 = fmt.Sprintf(" '%s' is %s.", word, orify(matchCardName(word))) + s3
+					for card, num := range cards {
+						forceNumStr := false
+						numItems += num
+						if stocked := Stocks[Bot][card]; num > stocked {
+							num = stocked
+							hasAll = false
+							forceNumStr = true
+							if num == 0 {
+								continue
 							}
 						}
 
-						if goldSum == 0 {
-							if numItems == 1 {
-								replyMsg = "I don't have "
-								for card, _ := range cards {
-									replyMsg += string(card)
-									break
-								}
-								replyMsg += " stocked."
-							} else {
-								replyMsg = "I don't have anything on that list stocked."
-							}
-							replyMsg += s3
-						} else {
-							replyMsg = fmt.Sprintf("I'm selling %s.%s%s%s", strings.Join(words, ", "), s1, s2, s3)
+						gold := s.DeterminePrice(card, num, false)
+						numStr := ""
+						if forceNumStr || num != 1 {
+							numStr = fmt.Sprintf("%dx ", num)
 						}
-						forceWhisper = true
+						words = append(words, fmt.Sprintf("%s%s %d", numStr, card, gold))
+						goldSum += gold
 					}
+
+					s1, s2, s3 := "", "", ""
+					if !hasAll {
+						s1 = " That's all I have."
+					}
+					if len(words) > 1 {
+						s2 = fmt.Sprintf(" That sums up to %dg.", goldSum)
+					}
+					if len(failedWords) > 0 {
+						s3 = fmt.Sprintf(" I don't know what '%s' is.", strings.Join(failedWords, ", "))
+					}
+
+					if len(ambiguousWords) > 0 {
+						for _, word := range ambiguousWords {
+							s3 = fmt.Sprintf(" '%s' is %s.", word, orify(matchCardName(word))) + s3
+						}
+					}
+
+					if goldSum == 0 {
+						if numItems == 1 {
+							replyMsg = "I don't have "
+							for card, _ := range cards {
+								replyMsg += string(card)
+								break
+							}
+							replyMsg += " stocked."
+						} else {
+							replyMsg = "I don't have anything on that list stocked."
+						}
+						replyMsg += s3
+					} else {
+						replyMsg = fmt.Sprintf("I'm selling %s.%s%s%s", strings.Join(words, ", "), s1, s2, s3)
+					}
+					forceWhisper = true
 				}
 
 				if strings.HasPrefix(command, "!price ") || strings.HasPrefix(command, "!stock ") {
