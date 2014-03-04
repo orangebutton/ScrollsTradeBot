@@ -14,9 +14,7 @@ type Request map[string]interface{}
 
 func SendRequest(con net.Conn, req Request) bool {
 	reqMarshaled, err := json.Marshal(req)
-	if err != nil {
-		panic(err)
-	}
+	deny(err)
 
 	_, err = con.Write(reqMarshaled)
 	if err != nil {
@@ -27,9 +25,7 @@ func SendRequest(con net.Conn, req Request) bool {
 
 func ListenTo(url string) (net.Conn, chan []byte) {
 	con, err := net.Dial("tcp", url)
-	if err != nil {
-		panic(err)
-	}
+	deny(err)
 	ch := make(chan []byte)
 
 	go func() {
@@ -88,30 +84,23 @@ func getLoginToken(email, password string) Request {
 	}
 
 	reqMarshaled, err := json.Marshal(req)
-	if err != nil {
-		panic(err)
-	}
+	deny(err)
 
 	buf := bytes.NewBufferString(string(reqMarshaled))
 
 	resp, err := http.Post("https://authserver.mojang.com/authenticate", "application/json", buf)
-	if err != nil {
-		panic(err)
-	}
+	deny(err)
 	defer resp.Body.Close()
 
 	readBuf := make([]byte, 2000)
 
 	bytesRead, err := resp.Body.Read(readBuf)
-	if err != nil {
-		panic(err)
-	}
+	deny(err)
 
 	var reply Request
 	err = json.Unmarshal(readBuf[:bytesRead], &reply)
-	if err != nil {
-		panic(err)
-	}
+	deny(err)
+
 	return reply
 }
 

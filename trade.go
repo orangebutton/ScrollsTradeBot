@@ -1,19 +1,21 @@
 package main
 
 import (
-	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"math"
 	"net/http"
-	"regexp"
-	"strconv"
+	"os"
 	"strings"
 	"time"
 )
 
-var Prices = make(map[string]int)
+type Price struct{ Buy, Sell int }
+
+var Prices = make(map[Card]Price)
 
 var Gold int
 
@@ -24,13 +26,13 @@ type TradeStatus struct {
 	Updated bool
 	Their   struct {
 		Value    int
-		Cards    map[string]int
+		Cards    map[Card]int
 		Gold     int
 		Accepted bool
 	}
 	My struct {
 		Value    int
-		Cards    map[string]int
+		Cards    map[Card]int
 		Gold     int
 		Accepted bool
 	}
@@ -41,56 +43,49 @@ func GoldForTrade() int {
 }
 
 func LoadPrices() {
-	lowerPrices := make(map[string]int)
-	upperPrices := make(map[string]int)
-	for _, card := range CardTypes {
-		switch CardRarities[card] {
-		case 0:
-			lowerPrices[card] = 50
-			upperPrices[card] = 150
-		case 1:
-			lowerPrices[card] = 300
-			upperPrices[card] = 600
-		case 2:
-			lowerPrices[card] = 600
-			upperPrices[card] = 1500
-		}
-		Prices[card] = (lowerPrices[card] + upperPrices[card]) / 2
-	}
-
-	resp, err := http.Get("http://www.scrollsguide.com/trade")
-	if err != nil {
-		panic(err)
-	}
+	resp, err := http.Get("http://a.scrollsguide.com/prices")
+	deny(err)
 	defer resp.Body.Close()
 
-	var b bytes.Buffer
-	_, err = io.Copy(&b, resp.Body)
+	body, err := ioutil.ReadAll(resp.Body)
+	deny(err)
 
-	s := string(b.Bytes())
-	re := regexp.MustCompile("<td class='row1 ex'>([A-Z][A-Za-z ]+)+</td><td class='row1'>([0-9]+)g</td><td class='row1'>([0-9]+)g</td>")
-	found := re.FindAllStringSubmatch(s, -1)
-
-	for _, matches := range found {
-		card := matches[1]
-		buy, _ := strconv.Atoi(matches[2])
-		sell, _ := strconv.Atoi(matches[3])
-
-		clip := func(i int) int {
-			if i < lowerPrices[card] {
-				return lowerPrices[card]
-			}
-			if i > upperPrices[card] {
-				return upperPrices[card]
-			}
-			return i
+	type JSON struct {
+		Msg  string
+		Data []struct {
+			Id       CardId
+			Buy      int
+			Sell     int
+			LastSeen int
 		}
+		ApiVersion int
+	}
 
-		Prices[card] = (clip(buy) + clip(sell)) / 2
+	var v JSON
+	err = json.Unmarshal(body, &v)
+	deny(err)
+
+	for id, name := range CardTypes {
+		p := Price{Buy: MinimumValue(name), Sell: MaximumValue(name)}
+		for _, data := range v.Data {
+			if data.Id == id {
+				if data.Buy > p.Buy {
+					p.Buy = data.Buy
+				}
+				if data.Sell < p.Sell {
+					p.Sell = data.Sell
+				}
+			}
+		}
+		if p.Sell < p.Buy {
+			t := (p.Sell + p.Buy) / 2
+			p.Sell, p.Buy = t, t
+		}
+		Prices[name] = p
 	}
 }
 
-func MinimumValue(card string) int {
+func MinimumValue(card Card) int {
 	switch CardRarities[card] {
 	case 0:
 		return 25
@@ -102,42 +97,49 @@ func MinimumValue(card string) int {
 	return -1
 }
 
-func BaseValue(card string) int {
-	newPrice := 9999
-
+func MaximumValue(card Card) int {
 	switch CardRarities[card] {
 	case 0:
-		newPrice = 150
+		return 150
 	case 1:
-		newPrice = 600
+		return 600
 	case 2:
-		newPrice = 1200
+		return 1200
 	}
-
-	return newPrice
+	return -1
 }
 
-func (s *State) DeterminePrice(card string, num int, buy bool) int {
-	expify := func(card string, stocked int) float64 {
-		basePrice := float64(BaseValue(card))
-		return basePrice * (1.0 - 1./12. * float64(stocked))
-	}
+func (s *State) DeterminePrice(card Card, num int, buy bool) int {
+	if Bot == "ClockworkAgent" {
+		// My personal pricing scheme
+		price := 0
+		stocked := Stocks[Bot][card]
 
-	price := 0
-	stocked := Stocks[Bot][card]
+		value := func(card Card, stocked int) float64 {
+			basePrice := float64(MaximumValue(card))
+			return basePrice * (1.0 - 1./12.*float64(stocked))
+		}
 
-	for i := 0; i < num; i++ {
+		for i := 0; i < num; i++ {
+			if buy {
+				goldFactor := math.Min(float64(Gold), 10000.0)/20000.0 + 0.5
+				price += int(math.Max(float64(MinimumValue(card)), value(card, stocked)*goldFactor))
+				stocked++
+
+			} else {
+				stocked--
+				price += int(math.Max(float64(MinimumValue(card)), value(card, stocked)*1.00))
+			}
+		}
+		return price
+	} else {
+		// just use Scrollsguide prices
 		if buy {
-			goldFactor := math.Min(float64(Gold), 10000.0)/20000.0 + 0.5
-			price += int(math.Max(float64(MinimumValue(card)), expify(card, stocked)*goldFactor))
-			stocked++
-
+			return Prices[card].Buy
 		} else {
-			stocked--
-			price += int(math.Max(float64(MinimumValue(card)), expify(card, stocked)*1.00))
+			return Prices[card].Sell
 		}
 	}
-	return price
 }
 
 func (s *State) ParseTradeResponse(v MTradeResponse) {
@@ -151,18 +153,18 @@ func (s *State) ParseTradeResponse(v MTradeResponse) {
 func (s *State) ParseTradeView(v MTradeView) {
 	my := v.From
 	their := v.To
-	tradePartner := Player(v.To.Profile.Name)
+	tradePartner := v.To.Profile.Name
 	if their.Profile.Id == PlayerIds[Bot] {
 		my, their = their, my
-		tradePartner = Player(v.From.Profile.Name)
+		tradePartner = v.From.Profile.Name
 	}
 
-	convertAndCount := func(cardIds []int, player Player) map[string]int {
-		count := make(map[string]int)
+	convertAndCount := func(cardIds []CardUid, player Player) map[Card]int {
+		count := make(map[Card]int)
 		for _, id := range cardIds {
 			for _, card := range Libraries[player].Cards {
 				if card.Id == id {
-					cardName := CardTypes[CardId(card.TypeId)]
+					cardName := CardTypes[card.TypeId]
 					count[cardName] = count[cardName] + 1
 					break
 				}
@@ -239,11 +241,11 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 
 		request := WTBrequests[tradePartner]
 		if len(request) > 0 {
-			cardIds := make([]int, 0)
+			cardIds := make([]CardUid, 0)
 
 			for cardName, num := range request {
 				for _, card := range Libraries[Bot].Cards {
-					if card.Tradable && CardTypes[CardId(card.TypeId)] == cardName {
+					if card.Tradable && CardTypes[card.TypeId] == cardName {
 						cardIds = append(cardIds, card.Id)
 						num--
 						if num <= 0 {
@@ -287,7 +289,7 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 					} else if command == "!reset" {
 						for cardName, num := range ts.My.Cards {
 							for _, card := range Libraries[Bot].Cards {
-								if CardTypes[CardId(card.TypeId)] == cardName && card.Tradable {
+								if CardTypes[card.TypeId] == cardName && card.Tradable {
 									s.SendRequest(Request{"msg": "TradeRemoveCard", "cardId": card.Id})
 									num--
 									if num <= 0 {
@@ -298,11 +300,11 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 						}
 
 					} else if command == "!price" {
-						format := func(card string, num int) string {
+						format := func(card Card, num int) string {
 							if num > 1 {
 								return fmt.Sprintf("%dx %s", num, card)
 							}
-							return card
+							return string(card)
 						}
 
 						theirValue := make(map[string]int)
@@ -351,17 +353,17 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 						cardlist = strings.TrimPrefix(cardlist, "!wtb")
 						cardlist = strings.TrimPrefix(cardlist, "wtb")
 
-						cardIds := make([]int, 0)
+						cardIds := make([]CardUid, 0)
 
-						requestedCards, failedWords := parseCardList(cardlist)
+						requestedCards, ambiguousWords, failedWords := parseCardList(cardlist)
 
 						WTBrequests[tradePartner] = requestedCards
 						if len(requestedCards) > 0 {
-							missing := make(map[string]int)
+							missing := make(map[Card]int)
 							for requestedCard, num := range requestedCards {
 								skip := ts.My.Cards[requestedCard]
 								for _, card := range Libraries[Bot].Cards {
-									if CardTypes[CardId(card.TypeId)] != requestedCard || !card.Tradable {
+									if CardTypes[card.TypeId] != requestedCard || !card.Tradable {
 										continue
 									}
 									skip--
@@ -381,10 +383,13 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 								for card, num := range missing {
 									list = append(list, fmt.Sprintf("%dx %s", num, card))
 								}
-								reply = fmt.Sprintf("I don't have %s.", strings.Join(list, ", "))
+								reply = fmt.Sprintf("I don't have %s. ", strings.Join(list, ", "))
+							}
+							for _, word := range ambiguousWords {
+								reply += fmt.Sprintf("'%s' is %s. ", word, orify(matchCardName(word)))
 							}
 							if len(failedWords) > 0 {
-								reply += fmt.Sprintf("I don't know what '%s' is.", strings.Join(failedWords, ", "))
+								reply += fmt.Sprintf("I don't know what '%s' is. ", cardlist)
 							}
 							if reply != "" {
 								s.Say(TradeRoom, reply)
@@ -398,25 +403,29 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 						s.Say(TradeRoom, "You have to name the card that I will remove.")
 
 					} else if strings.HasPrefix(command, "!remove") {
-						cardName := matchCardName(strings.TrimPrefix(command, "!remove "))
-						_, ok := Stocks[Bot][cardName]
-
-						alreadyOffered := ts.My.Cards[cardName]
-
-						if !ok {
-							s.Say(m.Channel, fmt.Sprintf("There is no scroll named '%s'.", cardName))
-						} else if alreadyOffered == 0 {
-							s.Say(m.Channel, fmt.Sprintf("%s is not part of this trade!", cardName))
-						} else {
-							for _, card := range Libraries[Bot].Cards {
-								if card.Tradable && CardTypes[CardId(card.TypeId)] == cardName {
-									if alreadyOffered == 1 {
-										s.SendRequest(Request{"msg": "TradeRemoveCard", "cardId": card.Id})
-										break
+						params := strings.TrimPrefix(command, "!remove ")
+						matchedCards := matchCardName(params)
+						switch len(matchedCards) {
+						case 0:
+							s.Say(m.Channel, fmt.Sprintf("There is no scroll named '%s'.", params))
+						case 1:
+							card := matchedCards[0]
+							alreadyOffered := ts.My.Cards[card]
+							if alreadyOffered == 0 {
+								s.Say(m.Channel, fmt.Sprintf("%s is not part of this trade!", card))
+							} else {
+								for _, mcard := range Libraries[Bot].Cards {
+									if mcard.Tradable && CardTypes[mcard.TypeId] == card {
+										if alreadyOffered == 1 {
+											s.SendRequest(Request{"msg": "TradeRemoveCard", "cardId": mcard.Id})
+											break
+										}
+										alreadyOffered--
 									}
-									alreadyOffered--
 								}
 							}
+						default:
+							s.Say(m.Channel, fmt.Sprintf("'%s' is %s.", params, matchCardName(params)))
 						}
 					}
 				}
@@ -429,12 +438,6 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 				oldValueSum := ts.Their.Value + ts.My.Value
 
 				ts = newTradeStatus
-				// sanity check..
-				if ts.Partner != tradePartner {
-					s.Whisper("redefiance", fmt.Sprintf("I failed so hard >.> %s != %s", ts.Partner, tradePartner))
-					return
-				}
-
 				if ts.Updated {
 					lastActivity = time.Now()
 				}
@@ -443,7 +446,7 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 					s.Say(TradeRoom, "Thanks!")
 					if donation {
 						if diff := ts.Their.Value + ts.Their.Gold - ts.My.Value - ts.My.Gold; diff > 0 {
-							s.Say("clockwork", fmt.Sprintf("%s just donated stuff worth %dg. Praise to them!", tradePartner, diff))
+							s.Say(MyRoom, fmt.Sprintf("%s just donated stuff worth %dg. Praise to them!", tradePartner, diff))
 						}
 					}
 
@@ -456,22 +459,27 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 						Stocks[Bot][card] -= num
 					}
 
-					alreadySold := make(map[string]bool)
-					cardIds := make([]int, 0)
+					alreadySold := make(map[Card]bool)
+					cardIds := make([]CardUid, 0)
 
 					for _, card := range Libraries[Bot].Cards {
-						cardName := CardTypes[CardId(card.TypeId)]
-						if !alreadySold[cardName] && card.Tradable && s.DeterminePrice(cardName, 1, false) <= MinimumValue(cardName) {
+						cardName := CardTypes[card.TypeId]
+						if !alreadySold[cardName] && card.Tradable && s.DeterminePrice(cardName, 1, false) < MinimumValue(cardName) {
 							alreadySold[cardName] = true
 							cardIds = append(cardIds, card.Id)
 						}
 					}
 					if len(cardIds) > 0 {
 						s.SendRequest(Request{"msg": "SellCards", "cardIds": cardIds})
-						for id := range cardIds {
-							name := CardTypes[CardId(id)]
-							Stocks[Bot][name] = Stocks[Bot][name] - 1
-							Gold += MinimumValue(name)
+						for _, id := range cardIds {
+							for _, card := range Libraries[Bot].Cards {
+								if card.Id == id {
+									name := CardTypes[card.TypeId]
+									Stocks[Bot][name] = Stocks[Bot][name] - 1
+									Gold += MinimumValue(name)
+									break
+								}
+							}
 						}
 					}
 					WTBrequests[tradePartner] = nil
@@ -555,4 +563,25 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 		}
 	}
 	return
+}
+
+func logTrade(ts TradeStatus) {
+	file, err := os.OpenFile("trade.log", os.O_WRONLY+os.O_CREATE+os.O_APPEND, 0)
+	deny(err)
+	defer file.Close()
+
+	list := func(count map[Card]int) string {
+		s := make([]string, 0)
+		for card, num := range count {
+			if num > 1 {
+				s = append(s, fmt.Sprintf("%dx %s", num, card))
+			} else {
+				s = append(s, string(card))
+			}
+		}
+		return strings.Join(s, ",")
+	}
+
+	io.WriteString(file, fmt.Sprintf("%s: Traded with %s.\nTheir offer: [%dg] %s\nMy offer: [%dg] %s\n\n",
+		time.Now().String(), ts.Partner, ts.Their.Gold, list(ts.Their.Cards), ts.My.Gold, list(ts.My.Cards)))
 }

@@ -1,5 +1,13 @@
 package main
 
+type (
+	Player  string
+	Channel string
+	Card    string
+	CardId  int
+	CardUid int
+)
+
 type Reply struct {
 	Msg string
 }
@@ -41,8 +49,8 @@ type MAvatarTypes struct {
 type MCardTypes struct {
 	Reply
 	CardTypes []struct {
-		Id                    int
-		Name                  string
+		Id                    CardId
+		Name                  Card
 		Description           string
 		SubTypesStr           string
 		Kind                  string
@@ -100,7 +108,7 @@ type MFriendRequestUpdate struct {
 			Profile struct {
 				Id        string
 				UserUuid  string
-				Name      string
+				Name      Player
 				AdminRole string
 				UserType  string
 			}
@@ -109,7 +117,7 @@ type MFriendRequestUpdate struct {
 			Profile struct {
 				Id        string
 				UserUuid  string
-				Name      string
+				Name      Player
 				AdminRole string
 				UserType  string
 			}
@@ -130,7 +138,7 @@ type MFriendUpdate struct {
 		Profile struct {
 			Id        string
 			UserUuid  string
-			Name      string
+			Name      Player
 			AdminRole string
 			UserType  string
 		}
@@ -144,7 +152,7 @@ type MGetFriends struct {
 		Profile struct {
 			Id        string
 			UserUuid  string
-			Name      string
+			Name      Player
 			AdminRole string
 			UserType  string
 		}
@@ -159,7 +167,7 @@ type MGetFriendRequests struct {
 			Profile struct {
 				Id        string
 				UserUuid  string
-				Name      string
+				Name      Player
 				AdminRole string
 				UserType  string
 			}
@@ -168,7 +176,7 @@ type MGetFriendRequests struct {
 			Profile struct {
 				Id        string
 				UserUuid  string
-				Name      string
+				Name      Player
 				AdminRole string
 				UserType  string
 			}
@@ -192,8 +200,8 @@ type MLibraryView struct {
 	Reply
 	ProfileId string
 	Cards     []struct {
-		Id       int
-		TypeId   int
+		Id       CardUid
+		TypeId   CardId
 		Tradable bool
 		isToken  bool
 		Level    int
@@ -234,7 +242,7 @@ type MProfileInfo struct {
 	Profile struct {
 		Id        string
 		UserUuid  string
-		Name      string
+		Name      Player
 		AdminRole string
 		UserType  string
 	}
@@ -242,29 +250,29 @@ type MProfileInfo struct {
 
 type MRoomChatMessage struct {
 	Reply
-	RoomName string
-	From     string
+	RoomName Channel
+	From     Player
 	Text     string
 }
 
 type MRoomEnter struct {
 	Reply
-	RoomName string
+	RoomName Channel
 }
 
 type MRoomInfo struct {
 	Reply
-	RoomName string
+	RoomName Channel
 	Reset    bool
 	Updated  []struct {
-		Name             string
+		Name             Player
 		Id               string
 		AcceptChallenges bool
 		AcceptTrades     bool
 		AdminRole        string
 	}
 	Removed []struct {
-		Name string
+		Name Player
 	}
 }
 
@@ -280,7 +288,7 @@ type MTradeInviteForward struct {
 	Inviter struct {
 		Id        string
 		UserUuid  string
-		Name      string
+		Name      Player
 		AdminRole string
 		UserType  string
 	}
@@ -311,11 +319,11 @@ type MTradeView struct {
 		Profile struct {
 			Id        string
 			UserUuid  string
-			Name      string
+			Name      Player
 			AdminRole string
 			UserType  string
 		}
-		CardIds  []int
+		CardIds  []CardUid
 		Gold     int
 		Accepted bool
 	}
@@ -323,11 +331,11 @@ type MTradeView struct {
 		Profile struct {
 			Id        string
 			UserUuid  string
-			Name      string
+			Name      Player
 			AdminRole string
 			UserType  string
 		}
-		CardIds  []int
+		CardIds  []CardUid
 		Gold     int
 		Accepted bool
 	}
@@ -336,7 +344,7 @@ type MTradeView struct {
 
 type MWhisper struct {
 	Reply
-	ToProfileName string
-	From          string
+	ToProfileName Player
+	From          Player
 	Text          string
 }

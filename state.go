@@ -19,10 +19,7 @@ type State struct {
 	chTradeResponse  chan bool
 }
 
-type Player string
-type Channel string
 type Listener chan Message
-type CardId int
 type Message struct {
 	Text    string
 	From    Player
@@ -30,10 +27,10 @@ type Message struct {
 }
 
 var (
-	CardTypes    = make(map[CardId]string)
-	CardRarities = make(map[string]int)
+	CardTypes    = make(map[CardId]Card)
+	CardRarities = make(map[Card]int)
 	Libraries    = make(map[Player]MLibraryView)
-	Stocks       = make(map[Player]map[string]int)
+	Stocks       = make(map[Player]map[Card]int)
 	PlayerIds    = make(map[Player]string)
 )
 
@@ -54,10 +51,6 @@ func InitState(con net.Conn) *State {
 		for {
 			select {
 			case <-s.chQuit:
-				// log.Print("Listener quit!")
-				// for _, l := range recv {
-				// 	close(l)
-				// }
 				s.chQuit <- true
 				return
 			case l := <-s.chAddListener:
@@ -118,30 +111,7 @@ func (s *State) LeaveRoom(room Channel) {
 }
 
 func (s *State) Say(room Channel, text string) {
-	// l := s.Listen()
-	// defer s.Shut(l)
-
 	s.SendRequest(Request{"msg": "RoomChatMessage", "text": text, "roomName": room})
-	// timeout := time.After(50 * time.Second)
-
-	// for {
-	// 	select {
-	// 	case m := <-l:
-	// 		if m.Channel == room && m.From == Bot && m.Text == text {
-	// 			log.Printf("Correct message!")
-	// 			return
-	// 		} else {
-	// 			log.Printf("Wrong message: %s", m)
-	// 		}
-	// 		// if m.From == "Scrolls" && m.Text == "You have been temporarily muted (for flooding the chat or by a moderator)." {
-	// 		// 	time.Sleep(time.Second)
-	// 		// 	s.SendRequest(Request{"msg": "RoomChatMessage", "text": text, "roomName": room})
-	// 		// }
-	// 	case <-timeout:
-	// 		log.Println("!!!MESSAGE TIMEOUT!!!")
-	// 		return
-	// 	}
-	// }
 }
 
 func (s *State) Whisper(player Player, text string) {
@@ -189,7 +159,7 @@ func (s *State) HandleReply(reply []byte) bool {
 		var v MCardTypes
 		json.Unmarshal(reply, &v)
 		for _, cardType := range v.CardTypes {
-			CardTypes[CardId(cardType.Id)] = cardType.Name
+			CardTypes[cardType.Id] = cardType.Name
 			CardRarities[cardType.Name] = cardType.Rarity
 		}
 		LoadPrices()
@@ -211,7 +181,7 @@ func (s *State) HandleReply(reply []byte) bool {
 		var v MFriendRequestUpdate
 		json.Unmarshal(reply, &v)
 		s.SendRequest(Request{"msg": "AcceptFriendRequest", "requestId": v.Request.Request.Id})
-		PlayerIds[Player(v.Request.From.Profile.Name)] = v.Request.From.Profile.Id
+		PlayerIds[v.Request.From.Profile.Name] = v.Request.From.Profile.Id
 
 	case "FriendUpdate":
 		var v MFriendUpdate
@@ -227,7 +197,7 @@ func (s *State) HandleReply(reply []byte) bool {
 
 		for _, request := range v.Requests {
 			s.SendRequest(Request{"msg": "AcceptFriendRequest", "requestId": request.Request.Id})
-			PlayerIds[Player(request.From.Profile.Name)] = request.From.Profile.Id
+			PlayerIds[request.From.Profile.Name] = request.From.Profile.Id
 		}
 
 	case "GetFriends":
@@ -235,7 +205,7 @@ func (s *State) HandleReply(reply []byte) bool {
 		json.Unmarshal(reply, &v)
 
 		for _, friend := range v.Friends {
-			PlayerIds[Player(friend.Profile.Name)] = friend.Profile.Id
+			PlayerIds[friend.Profile.Name] = friend.Profile.Id
 		}
 
 	case "LibraryView":
@@ -251,14 +221,14 @@ func (s *State) HandleReply(reply []byte) bool {
 		}
 
 		Libraries[player] = v
-		stock := make(map[string]int)
+		stock := make(map[Card]int)
 		for _, card := range CardTypes {
 			stock[card] = 0
 		}
 
 		for _, card := range v.Cards {
 			if card.Tradable {
-				name := CardTypes[CardId(card.TypeId)]
+				name := CardTypes[card.TypeId]
 				stock[name]++
 			}
 		}
@@ -280,14 +250,14 @@ func (s *State) HandleReply(reply []byte) bool {
 	case "ProfileInfo":
 		var v MProfileInfo
 		json.Unmarshal(reply, &v)
-		Bot = Player(v.Profile.Name)
+		Bot = v.Profile.Name
 		s.SendRequest(Request{"msg": "LibraryView"})
 
 	case "RoomChatMessage":
 		var v MRoomChatMessage
 		json.Unmarshal(reply, &v)
-		// if Player(v.From) != Bot {
-		s.chMessages <- Message{v.Text, Player(v.From), Channel(v.RoomName)}
+		// if v.From != Bot {
+		s.chMessages <- Message{v.Text, v.From, Channel(v.RoomName)}
 		// }
 
 	case "RoomEnter":
@@ -298,7 +268,7 @@ func (s *State) HandleReply(reply []byte) bool {
 		var v MRoomInfo
 		json.Unmarshal(reply, &v)
 		for _, player := range v.Updated {
-			PlayerIds[Player(player.Name)] = player.Id
+			PlayerIds[player.Name] = player.Id
 		}
 	case "ServerInfo":
 		var v MServerInfo
@@ -317,8 +287,8 @@ func (s *State) HandleReply(reply []byte) bool {
 	case "Whisper":
 		var v MWhisper
 		json.Unmarshal(reply, &v)
-		if Player(v.From) != Bot {
-			s.chMessages <- Message{v.Text, Player(v.From), Channel("WHISPER")}
+		if v.From != Bot {
+			s.chMessages <- Message{v.Text, v.From, Channel("WHISPER")}
 		}
 
 	default:
