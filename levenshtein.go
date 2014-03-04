@@ -127,7 +127,7 @@ func listify(cards []Card, thing string) string {
 	case 1:
 		return stringies[0]
 	default:
-		return strings.Join(stringies[0:len(stringies)-2], ", ") + thing + stringies[len(stringies)-1]
+		return strings.Join(stringies[0:len(stringies)-1], ", ") + thing + stringies[len(stringies)-1]
 	}
 }
 
