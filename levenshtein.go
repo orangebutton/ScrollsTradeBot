@@ -40,6 +40,8 @@ func Levenshtein(a, b string) int {
 }
 
 func matchCardName(input string) []Card {
+	input = strings.ToLower(input)
+
 	minDist := 2
 	bestFits := make([]Card, 0)
 
@@ -48,7 +50,12 @@ func matchCardName(input string) []Card {
 	}
 
 	for _, card := range CardTypes {
-		dist := Levenshtein(strings.ToLower(input), strings.ToLower(string(card)))
+		cardStr := strings.ToLower(string(card))
+		if input == cardStr {
+			return []Card{card}
+		}
+
+		dist := Levenshtein(input, cardStr)
 		if dist <= minDist {
 			minDist = dist
 			bestFits = append(bestFits, card)
@@ -59,7 +66,7 @@ func matchCardName(input string) []Card {
 		alternativeFits := make([]Card, 0)
 
 		for _, card := range CardTypes {
-			for _, substr := range strings.Split(string(card), " ") {
+			for _, substr := range strings.Split(strings.ToLower(string(card)), " ") {
 				if substr == input {
 					alternativeFits = append(alternativeFits, card)
 				}
@@ -68,7 +75,7 @@ func matchCardName(input string) []Card {
 
 		if len(alternativeFits) == 0 {
 			for _, card := range CardTypes {
-				if strings.Contains(strings.ToLower(string(card)), strings.ToLower(input)) {
+				if strings.Contains(strings.ToLower(string(card)), input) {
 					alternativeFits = append(alternativeFits, card)
 				}
 			}
