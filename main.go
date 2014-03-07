@@ -332,8 +332,8 @@ func startBot(email, password, helloMessage string) {
 
 					totalValue += Gold
 
-					replyMsg = fmt.Sprintf("I have %d commons, %d uncommons and %d rares. That's %d%% of all card types, as well as %d gold. Total value is %dk gold.",
-						commons, uncommons, rares, 100*len(uniques)/len(CardTypes), GoldForTrade(), int(totalValue/1000))
+					replyMsg = fmt.Sprintf("I have %d commons, %d uncommons and %d rares. That's %d%% of all card types, as well as %d gold. Total value is %dk gold. "+
+						"Check goo.gl/wwy4hp for a full list.", commons, uncommons, rares, 100*len(uniques)/len(CardTypes), GoldForTrade(), int(totalValue/1000))
 				}
 
 				if command == "!help" && m.Channel != TradeRoom {
