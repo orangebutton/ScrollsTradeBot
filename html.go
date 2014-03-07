@@ -13,7 +13,7 @@ func startWebServer() {
 		deny(err)
 	})
 
-	err := http.ListenAndServe(":80", nil)
+	err := http.ListenAndServe(":8080", nil)
 	deny(err)
 }
 
