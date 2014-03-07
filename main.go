@@ -144,10 +144,8 @@ func startBot(email, password, helloMessage string) {
 				replyMsg := ""
 				command := strings.ToLower(m.Text)
 
-				// if m.From != "redefiance" {
 				if m.From == "Great_Marcoosai" {
 					command = "" // banned!
-
 				}
 
 				if strings.HasPrefix(command, "wt") {

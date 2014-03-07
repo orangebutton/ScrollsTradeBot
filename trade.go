@@ -464,7 +464,7 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 
 					for _, card := range Libraries[Bot].Cards {
 						cardName := CardTypes[card.TypeId]
-						if !alreadySold[cardName] && card.Tradable && s.DeterminePrice(cardName, 1, false) < MinimumValue(cardName) {
+						if !alreadySold[cardName] && card.Tradable && s.DeterminePrice(cardName, 1, true) <= MinimumValue(cardName) {
 							alreadySold[cardName] = true
 							cardIds = append(cardIds, card.Id)
 						}
