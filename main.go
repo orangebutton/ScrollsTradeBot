@@ -19,6 +19,7 @@ var reInvalidChars = regexp.MustCompile("[^a-z'0-9 ]")
 
 var WTBrequests = make(map[Player]map[Card]int)
 var Bot Player
+var currentState *State
 
 func main() {
 	// Logging..
@@ -40,6 +41,8 @@ func main() {
 	}
 
 	email, password := lines[0], lines[1]
+	go startWebServer()
+
 	startBot(email, password, "Hello world!")
 	for {
 		startBot(email, password, "I live again!")
@@ -55,8 +58,10 @@ func deny(err error) {
 func startBot(email, password, helloMessage string) {
 	log.Print("Connecting...")
 	s, chAlive := Connect(email, password)
+	currentState = s
 
 	s.JoinRoom(MyRoom)
+
 	if helloMessage != "" {
 		s.Say(MyRoom, helloMessage)
 	}
