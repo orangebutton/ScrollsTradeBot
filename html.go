@@ -67,7 +67,7 @@ func showPriceTable(s *State) string {
 
 			<b>Why does the buy price fluctuate, when the sell price remains constant?</b><br>` +
 		fmt.Sprintf("If the bot has less than 2000 gold, the buy prices will be reduced by up to 50%%. The bot currently has %d gold, reducing prices by %.0f%%. ",
-			GoldForTrade(), 1.0-math.Min(float64(Gold), 10000.0)/20000.0+0.5) +
+			GoldForTrade(), 1.0-(math.Min(float64(Gold), 10000.0)/20000.0+0.5)) +
 		`This way the bot can aquire more cards, balancing out the fact that it had to overpay for most cards in order to determine the price, as well as
 		 new additions and general price deflation.<br><br>
 
