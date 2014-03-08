@@ -43,7 +43,7 @@ func GoldForTrade() int {
 }
 
 func LoadPrices() {
-	resp, err := http.Get("http://a.scrollsguide.com/SGPrices")
+	resp, err := http.Get("http://a.scrollsguide.com/prices")
 	deny(err)
 	defer resp.Body.Close()
 
@@ -133,7 +133,7 @@ func (s *State) DeterminePrice(card Card, num int, buy bool) int {
 		}
 		return price
 	} else {
-		// just use Scrollsguide SGPrices
+		// just use Scrollsguide prices
 		if buy {
 			return SGPrices[card].Buy * num
 		} else {
