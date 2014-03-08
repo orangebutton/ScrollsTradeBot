@@ -290,7 +290,7 @@ func startBot(email, password, helloMessage string) {
 					}
 
 					if rand.Float64() > 0.95 {
-						replyMsg += " By the way, you can whisper me with 'wtb/wts [list of cards]' to easily check SGPrices and availability for all cards you're interested in."
+						replyMsg += " By the way, you can whisper me with 'wtb/wts [list of cards]' to easily check prices and availability for all cards you're interested in."
 					}
 				}
 
