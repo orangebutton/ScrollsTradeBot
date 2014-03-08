@@ -43,30 +43,30 @@ func showPriceTable(s *State) string {
 	out := `
 	<html>
 		<head>
-			<title>ClockworkAgent prices</title>
+			<title>ClockworkAgent SGPrices</title>
 		</head>
 		<body>
-			<b><h1>ClockworkAgent - Prices and FAQ</h1></b>
+			<b><h1>ClockworkAgent - SGPrices and FAQ</h1></b>
 			
 			<b>What is this?</b><br>
-			This site displays the prices for which the ClockworkAgent, a trading bot for the game Scrolls, will buy and sell cards for.<br><br>
+			This site displays the SGPrices for which the ClockworkAgent, a trading bot for the game Scrolls, will buy and sell cards for.<br><br>
 			
 			<b>How do I engage in trading with the bot?</b><br>
 			Just join the ingame channel "clockwork" and say "!trade". You will then be queued up for interaction with the bot in a trade.<br><br>
 			
-			<b>Why are these prices so different from Scrollsguide prices?</b><br>
-			Scrollsguide prices are determined from WTB and WTS messages in the Trading-channel. Thus they reflect what people expect to pay/get
+			<b>Why are these SGPrices so different from Scrollsguide SGPrices?</b><br>
+			Scrollsguide SGPrices are determined from WTB and WTS messages in the Trading-channel. Thus they reflect what people expect to pay/get
 			for a card, not necessarily what the card is actually traded for. Since most people adjust their expectations to what the current Scrollsguide
-			price is, this can lead to a self-fulfilling prophecy. Also, it is pretty easy to manipulate the prices for cards that are traded less often,
-			enabling a way to scam the bot if it would use these prices.<br><br>
+			price is, this can lead to a self-fulfilling prophecy. Also, it is pretty easy to manipulate the SGPrices for cards that are traded less often,
+			enabling a way to scam the bot if it would use these SGPrices.<br><br>
 
-			<b>How then are these prices calculated?</b><br>
+			<b>How then are these SGPrices calculated?</b><br>
 			The price starts at 1200 for rares, 600 for uncommons and 150 for commons. Each time a card is sold to the bot, it will assume that
 			the card is less valuable, reducing the price by 100 / 50 / 12.5 depending on rarity. Each time a card is bought from the bot, the price will
 			go up again.<br><br>
 
 			<b>Why does the buy price fluctuate, when the sell price remains constant?</b><br>` +
-		fmt.Sprintf("If the bot has less than 2000 gold, the buy prices will be reduced by up to 50%%. The bot currently has %d gold, reducing prices by %.0f%%. ",
+		fmt.Sprintf("If the bot has less than 2000 gold, the buy SGPrices will be reduced by up to 50%%. The bot currently has %d gold, reducing SGPrices by %.0f%%. ",
 			GoldForTrade(), (1.0-(math.Min(float64(Gold), 10000.0)/20000.0+0.5))*100) +
 		`This way the bot can aquire more cards, balancing out the fact that it had to overpay for most cards in order to determine the price, as well as
 		 new additions and general price deflation.<br><br>

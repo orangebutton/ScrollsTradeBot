@@ -15,7 +15,7 @@ import (
 
 type Price struct{ Buy, Sell int }
 
-var Prices = make(map[Card]Price)
+var SGPrices = make(map[Card]Price)
 
 var Gold int
 
@@ -43,7 +43,7 @@ func GoldForTrade() int {
 }
 
 func LoadPrices() {
-	resp, err := http.Get("http://a.scrollsguide.com/prices")
+	resp, err := http.Get("http://a.scrollsguide.com/SGPrices")
 	deny(err)
 	defer resp.Body.Close()
 
@@ -81,7 +81,7 @@ func LoadPrices() {
 			t := (p.Sell + p.Buy) / 2
 			p.Sell, p.Buy = t, t
 		}
-		Prices[name] = p
+		SGPrices[name] = p
 	}
 }
 
@@ -133,11 +133,11 @@ func (s *State) DeterminePrice(card Card, num int, buy bool) int {
 		}
 		return price
 	} else {
-		// just use Scrollsguide prices
+		// just use Scrollsguide SGPrices
 		if buy {
-			return Prices[card].Buy
+			return SGPrices[card].Buy * num
 		} else {
-			return Prices[card].Sell
+			return SGPrices[card].Sell * num
 		}
 	}
 }
