@@ -2,16 +2,12 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"regexp"
 	"strings"
 	"time"
-)
-
-const (
-	MyRoom = "clockwork" // please change this when you set up your own bot :)
+	"os"
 )
 
 var reNumbers = regexp.MustCompile(`x?(\d+)x?`)
@@ -20,32 +16,27 @@ var reInvalidChars = regexp.MustCompile("[^a-z'0-9 ]")
 var WTBrequests = make(map[Player]map[Card]int)
 var Bot Player
 var currentState *State
+                       
+const MyRoom = "clockwork" // you will need to change the room
 
-func main() {
-	// Logging..
-	//f, err := os.OpenFile("system.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	//deny(err)
-	//log.SetOutput(f)
-	log.SetOutput(ioutil.Discard)
+func main() {	
+	log.Print("main start...")        
 
-	// Get email and password from the login.txt file (2 lines)
-	login, err := ioutil.ReadFile("login.txt")
-	deny(err)
-
-	lines := strings.Split(string(login), "\n")
-	if len(lines) != 2 { // try windows line endings
-		lines = strings.Split(string(login), "\r\n")
+	config := LoadConfig()
+   
+	if(config.Log) {
+		f, err := os.OpenFile("system.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		deny(err)
+		log.SetOutput(f)
+		//log.SetOutput(ioutil.Discard)
 	}
-	if len(lines) != 2 {
-		panic("could not read email/password from login.txt")
+        	
+	if(config.UseWebserver) {
+		go startWebServer()
 	}
-
-	email, password := lines[0], lines[1]
-	go startWebServer()
-
-	startBot(email, password, "Hello world!")
+	
 	for {
-		startBot(email, password, "I live again!")
+		startBot(config.Email, config.Password, "Hello world!")
 	}
 }
 
@@ -56,7 +47,6 @@ func deny(err error) {
 }
 
 func startBot(email, password, helloMessage string) {
-	log.Print("Connecting...")
 	s, chAlive := Connect(email, password)
 	currentState = s
 
@@ -136,9 +126,9 @@ func startBot(email, password, helloMessage string) {
 				}
 
 			case m := <-messages:
-				if m.From == "redefiance" && strings.HasPrefix(m.Text, "!say ") {
-					s.Say(MyRoom, strings.TrimPrefix(m.Text, "!say "))
-				}
+				//if m.From == "redefiance" && strings.HasPrefix(m.Text, "!say ") {
+				//	s.Say(myRoom, strings.TrimPrefix(m.Text, "!say "))
+				//}
 
 				forceWhisper := false
 				replyMsg := ""
@@ -330,12 +320,11 @@ func startBot(email, password, helloMessage string) {
 
 					totalValue += Gold
 
-					replyMsg = fmt.Sprintf("I have %d commons, %d uncommons and %d rares. That's %d%% of all card types, as well as %d gold. Total value is %dk gold. "+
-						"Check goo.gl/wwy4hp for a full list.", commons, uncommons, rares, 100*len(uniques)/len(CardTypes), GoldForTrade(), int(totalValue/1000))
+					replyMsg = fmt.Sprintf("I have %d commons, %d uncommons and %d rares. That's %d%% of all card types, as well as %d gold. Total value is %dk gold. ", commons, uncommons, rares, 100*len(uniques)/len(CardTypes), GoldForTrade(), int(totalValue/1000))
 				}
 
 				if command == "!help" && m.Channel != TradeRoom {
-					replyMsg = "You can whisper me WTS or WTB requests. If you're interested in trading, you can queue up with '!trade'. You can also check the '!stock'"
+					replyMsg = "You can whisper me WTS or WTB requests. If you're interested in trading, you can queue up with '!trade'. You can also check the '!stock' and what is '!missing.'"
 				}
 
 				if command == "!uptime" {
