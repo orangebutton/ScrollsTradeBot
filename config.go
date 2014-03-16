@@ -2,8 +2,8 @@ package main
 
 import (
 	"encoding/json"
-	"os"
 	"log"
+	"os"
 )
 
 //{
@@ -13,22 +13,21 @@ import (
 //    "Log": true
 //}
 type Config struct {
-    Email    	string
-    Password	string
-    UseWebserver bool
-    Log 	bool
+	Email        string
+	Password     string
+	UseWebserver bool
+	Log          bool
 }
 
-func LoadConfig() *Config {	
+func LoadConfig() *Config {
 	file, _ := os.Open("conf.json")
 	decoder := json.NewDecoder(file)
 	config := new(Config)
 	decoder.Decode(config)
-	
-	log.Println("Email: ", config.Email) 
-	log.Println("Room: ", config.Email)
-	log.Println("UseWebserver: ", config.UseWebserver) 
+
+	log.Println("Email: ", config.Email)
+	log.Println("UseWebserver: ", config.UseWebserver)
 	log.Println("Log: ", config.Log)
-	
+
 	return config
 }
