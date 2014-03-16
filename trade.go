@@ -13,6 +13,13 @@ import (
 	"time"
 )
 
+const (
+	useScrollGuidePrice = false
+	goldDivisor         = 5
+	goldThreshold       = 2000.0
+	maxNumToBuy         = 12.0
+)
+
 type Price struct{ Buy, Sell int }
 
 var SGPrices = make(map[Card]Price)
@@ -39,7 +46,7 @@ type TradeStatus struct {
 }
 
 func GoldForTrade() int {
-	return Gold / 5
+	return Gold / goldDivisor
 }
 
 func LoadPrices() {
@@ -110,36 +117,48 @@ func MaximumValue(card Card) int {
 }
 
 func (s *State) DeterminePrice(card Card, num int, buy bool) int {
-	if Bot == "ClockworkAgent" {
-		// My personal pricing scheme
-		price := 0
-		stocked := Stocks[Bot][card]
-
-		value := func(card Card, stocked int) float64 {
-			basePrice := float64(MaximumValue(card))
-			return basePrice * (1.0 - 1./12.*float64(stocked))
-		}
-
-		for i := 0; i < num; i++ {
-			if buy {
-				goldFactor := math.Min(float64(Gold), 10000.0)/20000.0 + 0.5
-				price += int(math.Max(float64(MinimumValue(card)), value(card, stocked)*goldFactor))
-				stocked++
-
-			} else {
-				stocked--
-				price += int(math.Max(float64(MinimumValue(card)), value(card, stocked)*1.00))
-			}
-		}
-		return price
-	} else {
-		// just use Scrollsguide prices
+	if useScrollGuidePrice {
 		if buy {
 			return SGPrices[card].Buy * num
 		} else {
 			return SGPrices[card].Sell * num
 		}
+	} else {
+		// return clockworkPricing(card, num, buy)
+		return autobotsPricing(card, num, buy)
 	}
+}
+
+func pricingBasedOnInventory(card Card, num int, buy bool) int {
+	price := 0
+	stocked := Stocks[Bot][card]
+
+	value := func(card Card, stocked int) float64 {
+		basePrice := float64(MaximumValue(card))
+		return basePrice * (1.0 - 1./maxNumToBuy*float64(stocked))
+	}
+
+	goldFactor := math.Min(float64(GoldForTrade()), goldThreshold)/(goldThreshold*2) + 0.5
+	for i := 0; i < num; i++ {
+		if buy {
+			price += int(math.Max(float64(MinimumValue(card)), value(card, stocked)*goldFactor))
+			stocked++
+		} else {
+			price += int(math.Max(float64(MinimumValue(card)), value(card, stocked)*1.00))
+			stocked--
+		}
+	}
+	return price
+}
+
+func autobotsPricing(card Card, num int, buy bool) int {
+	price := 0
+	if buy {
+		price = num * MinimumValue(card)
+	} else {
+		price = pricingBasedOnInventory(card, num, buy)
+	}
+	return price
 }
 
 func (s *State) ParseTradeResponse(v MTradeResponse) {
