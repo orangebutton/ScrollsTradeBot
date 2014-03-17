@@ -154,88 +154,9 @@ func autobotsPricing(card Card, num int, buy bool) int {
 	return price
 }
 
-func (s *State) ParseTradeResponse(v MTradeResponse) {
-	if v.Status == "DECLINE" {
-		s.chTradeResponse <- false
-	} else {
-		s.chTradeResponse <- true
-	}
-}
-
-func (s *State) ParseTradeView(v MTradeView) {
-	my := v.From
-	their := v.To
-	tradePartner := v.To.Profile.Name
-	if their.Profile.Id == PlayerIds[Bot] {
-		my, their = their, my
-		tradePartner = v.From.Profile.Name
-	}
-
-	convertAndCount := func(cardIds []CardUid, player Player) map[Card]int {
-		count := make(map[Card]int)
-		for _, id := range cardIds {
-			for _, card := range Libraries[player].Cards {
-				if card.Id == id {
-					cardName := CardTypes[card.TypeId]
-					count[cardName] = count[cardName] + 1
-					break
-				}
-			}
-		}
-		return count
-	}
-
-	ts := TradeStatus{}
-	ts.Updated = v.Modified
-	ts.Partner = tradePartner
-	ts.Their.Accepted = their.Accepted
-	ts.Their.Cards = convertAndCount(their.CardIds, tradePartner)
-	ts.Their.Gold = their.Gold
-	ts.My.Accepted = my.Accepted
-	ts.My.Cards = convertAndCount(my.CardIds, Bot)
-	ts.My.Gold = my.Gold
-
-	s.chTradeStatus <- ts
-}
-
-func (s *State) InitiateTrade(player Player, timeout time.Duration) chan TradeStatus {
-	s.SendRequest(Request{"msg": "TradeInvite", "profile": PlayerIds[player]})
-	accepted := false
-	TradeRoom = ""
-
-	cancel := time.After(timeout)
-	l := s.Listen()
-	defer s.Shut(l)
-
-	for {
-		if TradeRoom != "" && accepted {
-			break
-		}
-
-		select {
-		case ok := <-s.chTradeResponse:
-			if !ok { // they rejected the trade invite
-				log.Printf("REJECT")
-				return nil
-			} else {
-				accepted = true
-			}
-		case m := <-l: // find out what room we're trading in
-			if m.From == "Scrolls" && strings.HasPrefix(string(m.Channel), "trade-") && strings.HasPrefix(m.Text, "You have joined") {
-				log.Printf("ACCEPT")
-				TradeRoom = m.Channel
-			}
-		case <-cancel:
-			// TODO: what happens if the player accepts after timeout?
-			return nil
-		}
-	}
-	return s.chTradeStatus
-}
-
 func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 	// Send them a trade invite and see if they accept
-	chTradeStatus := s.InitiateTrade(tradePartner, 40*time.Second)
+	chTradeStatus := s.initiateTrade(tradePartner, 40*time.Second)
 	if chTradeStatus != nil {
 		defer s.LeaveRoom(TradeRoom)
 		lastActivity := time.Now()
@@ -268,24 +189,7 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 				}
 				if m.From == tradePartner && m.Channel == TradeRoom {
 					lastActivity = time.Now()
-
-					command := strings.TrimSpace(strings.ToLower(m.Text))
-					if command == "!help" {
-						s.handleTradeHelp(TradeRoom)
-					} else if command == "!donation" {
-						donation = !donation
-						s.handleDonation(donation, TradeRoom)
-					} else if command == "!reset" {
-						s.handleReset(ts)
-					} else if command == "!price" {
-						s.handleTradePrice(ts, TradeRoom)
-					} else if strings.HasPrefix(command, "!add") || strings.HasPrefix(command, "!wtb") || strings.HasPrefix(command, "wtb") {
-						s.handleAdd(ts, tradePartner, command)
-					} else if command == "!remove" {
-						s.Say(TradeRoom, "You have to name the card that I will remove.")
-					} else if strings.HasPrefix(command, "!remove") {
-						s.handleRemove(command, ts, TradeRoom)
-					}
+					donation = s.TradeMessageHandler(donation, m, tradePartner, ts)
 				}
 
 			case newTradeStatus := <-chTradeStatus:
@@ -379,184 +283,39 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 	return
 }
 
-func logTrade(ts TradeStatus) {
-	file, err := os.OpenFile("trade.log", os.O_WRONLY+os.O_CREATE+os.O_APPEND, 0)
-	deny(err)
-	defer file.Close()
+func (s *State) initiateTrade(player Player, timeout time.Duration) chan TradeStatus {
+	s.SendRequest(Request{"msg": "TradeInvite", "profile": PlayerIds[player]})
+	accepted := false
+	TradeRoom = ""
 
-	list := func(count map[Card]int) string {
-		s := make([]string, 0)
-		for card, num := range count {
-			if num > 1 {
-				s = append(s, fmt.Sprintf("%dx %s", num, card))
+	cancel := time.After(timeout)
+	l := s.Listen()
+	defer s.Shut(l)
+
+	for {
+		if TradeRoom != "" && accepted {
+			break
+		}
+
+		select {
+		case ok := <-s.chTradeResponse:
+			if !ok { // they rejected the trade invite
+				log.Printf("REJECT")
+				return nil
 			} else {
-				s = append(s, string(card))
+				accepted = true
 			}
-		}
-		return strings.Join(s, ",")
-	}
-
-	io.WriteString(file, fmt.Sprintf("%s: Traded with %s.\nTheir offer: [%dg] %s\nMy offer: [%dg] %s\n\n",
-		time.Now().String(), ts.Partner, ts.Their.Gold, list(ts.Their.Cards), ts.My.Gold, list(ts.My.Cards)))
-}
-
-func (s *State) handleDonation(donation bool, tradeRoom Channel) {
-	if donation {
-		s.Say(TradeRoom, "I will consider everything you put into this trade as a donation. Much appreciated!"+
-			" If you change your mind, just repeat the command.")
-	} else {
-		s.Say(TradeRoom, "Okay :(")
-	}
-}
-
-func (s *State) handleReset(ts TradeStatus) {
-	for cardName, num := range ts.My.Cards {
-		for _, card := range Libraries[Bot].Cards {
-			if CardTypes[card.TypeId] == cardName && card.Tradable {
-				s.SendRequest(Request{"msg": "TradeRemoveCard", "cardId": card.Id})
-				num--
-				if num <= 0 {
-					break
-				}
+		case m := <-l: // find out what room we're trading in
+			if m.From == "Scrolls" && strings.HasPrefix(string(m.Channel), "trade-") && strings.HasPrefix(m.Text, "You have joined") {
+				log.Printf("ACCEPT")
+				TradeRoom = m.Channel
 			}
+		case <-cancel:
+			// TODO: what happens if the player accepts after timeout?
+			return nil
 		}
 	}
-}
-
-func (s *State) handleTradePrice(ts TradeStatus, tradeRoom Channel) {
-	format := func(card Card, num int) string {
-		if num > 1 {
-			return fmt.Sprintf("%dx %s", num, card)
-		}
-		return string(card)
-	}
-
-	theirValue := make(map[string]int)
-	for card, num := range ts.Their.Cards {
-		theirValue[format(card, num)] = s.DeterminePrice(card, num, true)
-	}
-	myValue := make(map[string]int)
-	for card, num := range ts.My.Cards {
-		myValue[format(card, num)] = s.DeterminePrice(card, num, false)
-	}
-
-	list := func(value map[string]int) []string {
-		lines := make([]string, len(value))
-		for i, _ := range lines {
-			mostGold := 0
-			nextCard := ""
-
-			for card, gold := range value {
-				if gold > mostGold {
-					mostGold = gold
-					nextCard = card
-				}
-			}
-			lines[i] = fmt.Sprintf("%s for %dg", nextCard, mostGold)
-			value[nextCard] = 0
-		}
-		return lines
-	}
-	msg := ""
-	if len(theirValue) > 0 {
-		msg += fmt.Sprintf("I'll buy %s. ", strings.Join(list(theirValue), ", "))
-	}
-	if len(myValue) > 0 {
-		msg += fmt.Sprintf("I'll sell %s. ", strings.Join(list(myValue), ", "))
-	}
-	diff := ts.Their.Value - ts.My.Value
-	if diff < 0 {
-		msg += fmt.Sprintf("Thus you owe me %dg.", -diff)
-	} else {
-		msg += fmt.Sprintf("Thus I owe you %dg.", diff)
-	}
-	s.Say(tradeRoom, msg)
-}
-
-func (s *State) handleAdd(ts TradeStatus, tradePartner Player, command string) {
-	cardlist := strings.TrimPrefix(command, "!add")
-	cardlist = strings.TrimPrefix(cardlist, "!wtb")
-	cardlist = strings.TrimPrefix(cardlist, "wtb")
-
-	cardIds := make([]CardUid, 0)
-
-	requestedCards, ambiguousWords, failedWords := parseCardList(cardlist)
-
-	WTBrequests[tradePartner] = requestedCards
-	if len(requestedCards) > 0 {
-		missing := make(map[Card]int)
-		for requestedCard, num := range requestedCards {
-			skip := ts.My.Cards[requestedCard]
-			for _, card := range Libraries[Bot].Cards {
-				if CardTypes[card.TypeId] != requestedCard || !card.Tradable {
-					continue
-				}
-				skip--
-				if num > 0 && skip < 0 {
-					cardIds = append(cardIds, card.Id)
-					num--
-				}
-			}
-			if num > 0 {
-				missing[requestedCard] = num
-			}
-		}
-
-		reply := ""
-		if len(missing) > 0 {
-			list := make([]string, 0, len(missing))
-			for card, num := range missing {
-				list = append(list, fmt.Sprintf("%dx %s", num, card))
-			}
-			reply = fmt.Sprintf("I don't have %s. ", strings.Join(list, ", "))
-		}
-		for _, word := range ambiguousWords {
-			reply += fmt.Sprintf("'%s' is %s. ", word, orify(matchCardName(word)))
-		}
-		if len(failedWords) > 0 {
-			reply += fmt.Sprintf("I don't know what '%s' is. ", cardlist)
-		}
-		if reply != "" {
-			s.Say(TradeRoom, reply)
-		}
-		if len(cardIds) > 0 {
-			s.SendRequest(Request{"msg": "TradeAddCards", "cardIds": cardIds})
-		}
-	}
-}
-
-func (s *State) handleRemove(command string, ts TradeStatus, tradeRoom Channel) {
-	params := strings.TrimPrefix(command, "!remove ")
-	matchedCards := matchCardName(params)
-	switch len(matchedCards) {
-	case 0:
-		s.Say(tradeRoom, fmt.Sprintf("There is no scroll named '%s'.", params))
-	case 1:
-		card := matchedCards[0]
-		alreadyOffered := ts.My.Cards[card]
-		if alreadyOffered == 0 {
-			s.Say(tradeRoom, fmt.Sprintf("%s is not part of this trade!", card))
-		} else {
-			for _, mcard := range Libraries[Bot].Cards {
-				if mcard.Tradable && CardTypes[mcard.TypeId] == card {
-					if alreadyOffered == 1 {
-						s.SendRequest(Request{"msg": "TradeRemoveCard", "cardId": mcard.Id})
-						break
-					}
-					alreadyOffered--
-				}
-			}
-		}
-	default:
-		s.Say(tradeRoom, fmt.Sprintf("'%s' is %s.", params, matchCardName(params)))
-	}
-
-}
-
-func (s *State) handleTradeHelp(tradeRoom Channel) {
-	s.Say(tradeRoom, "Just add the scrolls you want to sell on your side. To buy scrolls from me, say 'wtb [list of scrolls]'"+
-		" and I'll add everything I have on that list. You can also !add or !remove single cards."+
-		" Not sure about the gold? Just ask for the !price and I'll list it up.")
+	return s.chTradeStatus
 }
 
 func (s *State) initFromOldWTBRequest(tradePartner Player) {
@@ -622,4 +381,69 @@ func (s *State) finishTrade(donation bool, tradePartner Player, ts TradeStatus) 
 	}
 	WTBrequests[tradePartner] = nil
 	logTrade(ts)
+}
+
+func (s *State) ParseTradeResponse(v MTradeResponse) {
+	if v.Status == "DECLINE" {
+		s.chTradeResponse <- false
+	} else {
+		s.chTradeResponse <- true
+	}
+}
+
+func (s *State) ParseTradeView(v MTradeView) {
+	my := v.From
+	their := v.To
+	tradePartner := v.To.Profile.Name
+	if their.Profile.Id == PlayerIds[Bot] {
+		my, their = their, my
+		tradePartner = v.From.Profile.Name
+	}
+
+	convertAndCount := func(cardIds []CardUid, player Player) map[Card]int {
+		count := make(map[Card]int)
+		for _, id := range cardIds {
+			for _, card := range Libraries[player].Cards {
+				if card.Id == id {
+					cardName := CardTypes[card.TypeId]
+					count[cardName] = count[cardName] + 1
+					break
+				}
+			}
+		}
+		return count
+	}
+
+	ts := TradeStatus{}
+	ts.Updated = v.Modified
+	ts.Partner = tradePartner
+	ts.Their.Accepted = their.Accepted
+	ts.Their.Cards = convertAndCount(their.CardIds, tradePartner)
+	ts.Their.Gold = their.Gold
+	ts.My.Accepted = my.Accepted
+	ts.My.Cards = convertAndCount(my.CardIds, Bot)
+	ts.My.Gold = my.Gold
+
+	s.chTradeStatus <- ts
+}
+
+func logTrade(ts TradeStatus) {
+	file, err := os.OpenFile("trade.log", os.O_WRONLY+os.O_CREATE+os.O_APPEND, 0)
+	deny(err)
+	defer file.Close()
+
+	list := func(count map[Card]int) string {
+		s := make([]string, 0)
+		for card, num := range count {
+			if num > 1 {
+				s = append(s, fmt.Sprintf("%dx %s", num, card))
+			} else {
+				s = append(s, string(card))
+			}
+		}
+		return strings.Join(s, ",")
+	}
+
+	io.WriteString(file, fmt.Sprintf("%s: Traded with %s.\nTheir offer: [%dg] %s\nMy offer: [%dg] %s\n\n",
+		time.Now().String(), ts.Partner, ts.Their.Gold, list(ts.Their.Cards), ts.My.Gold, list(ts.My.Cards)))
 }
