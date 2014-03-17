@@ -36,10 +36,13 @@ func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bo
 		replyMsg = handleMissing()
 		forceWhisper = (m.Channel == TradeRoom)
 	case "!say":
-		//if m.From == "redefiance" {
-		s.Say(MyRoom, args)
+		if m.From == Conf.Owner {
+			s.Say(Conf.Room, args)
+		}
 	case "!sayTrading":
-		s.Say("trading-1", args)
+		if m.From == Conf.Owner {
+			s.Say("trading-1", args)
+		}
 	case "!trade", "!queue":
 		replyMsg = handleTrade(m, queue)
 		queue = append(queue, m.From)
@@ -304,9 +307,9 @@ func (s *State) handlePreTrade(queue []Player) {
 		for i, name := range queue[1:] {
 			waiting[i] = string(name)
 		}
-		s.Say(MyRoom, fmt.Sprintf("Now trading with [%s] < %s", queue[0], strings.Join(waiting, " < ")))
+		s.Say(Conf.Room, fmt.Sprintf("Now trading with [%s] < %s", queue[0], strings.Join(waiting, " < ")))
 	} else {
-		s.Say(MyRoom, fmt.Sprintf("Now trading with [%s].", queue[0]))
+		s.Say(Conf.Room, fmt.Sprintf("Now trading with [%s].", queue[0]))
 	}
 }
 
@@ -326,9 +329,9 @@ func (s *State) handlePostTrade(stockBefore map[Card]int, ts TradeStatus) {
 		stockBefore[card] = stockBefore[card] - num
 	}
 	if len(aquired) > 0 {
-		s.Say(MyRoom, fmt.Sprintf("I've just aquired %s.", andify(aquired)))
+		s.Say(Conf.Room, fmt.Sprintf("I've just aquired %s.", andify(aquired)))
 	}
 	if len(lost) > 0 {
-		s.Say(MyRoom, fmt.Sprintf("I've just sold my last %s.", andify(lost)))
+		s.Say(Conf.Room, fmt.Sprintf("I've just sold my last %s.", andify(lost)))
 	}
 }

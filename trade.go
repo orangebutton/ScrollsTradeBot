@@ -13,13 +13,6 @@ import (
 	"time"
 )
 
-const (
-	useScrollGuidePrice = false
-	goldDivisor         = 5
-	goldThreshold       = 2000.0
-	maxNumToBuy         = 12.0
-)
-
 type Price struct{ Buy, Sell int }
 
 var SGPrices = make(map[Card]Price)
@@ -46,7 +39,7 @@ type TradeStatus struct {
 }
 
 func GoldForTrade() int {
-	return Gold / goldDivisor
+	return Gold / Conf.GoldDivisor
 }
 
 func LoadPrices() {
@@ -117,7 +110,7 @@ func MaximumValue(card Card) int {
 }
 
 func (s *State) DeterminePrice(card Card, num int, buy bool) int {
-	if useScrollGuidePrice {
+	if Conf.UseScrollsGuidePrice {
 		if buy {
 			return SGPrices[card].Buy * num
 		} else {
@@ -135,10 +128,10 @@ func pricingBasedOnInventory(card Card, num int, buy bool) int {
 
 	value := func(card Card, stocked int) float64 {
 		basePrice := float64(MaximumValue(card))
-		return basePrice * (1.0 - 1./maxNumToBuy*float64(stocked))
+		return basePrice * (1.0 - 1./Conf.MaxNumToBuy*float64(stocked))
 	}
 
-	goldFactor := math.Min(float64(GoldForTrade()), goldThreshold)/(goldThreshold*2) + 0.5
+	goldFactor := math.Min(float64(GoldForTrade()), Conf.GoldThreshold)/(Conf.GoldThreshold*2) + 0.5
 	for i := 0; i < num; i++ {
 		if buy {
 			price += int(math.Max(float64(MinimumValue(card)), value(card, stocked)*goldFactor))
@@ -465,7 +458,7 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 					s.Say(TradeRoom, "Thanks!")
 					if donation {
 						if diff := ts.Their.Value + ts.Their.Gold - ts.My.Value - ts.My.Gold; diff > 0 {
-							s.Say(MyRoom, fmt.Sprintf("%s just donated stuff worth %dg. Praise to them!", tradePartner, diff))
+							s.Say(Conf.Room, fmt.Sprintf("%s just donated stuff worth %dg. Praise to them!", tradePartner, diff))
 						}
 					}
 

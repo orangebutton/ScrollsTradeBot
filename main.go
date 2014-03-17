@@ -13,27 +13,26 @@ var reInvalidChars = regexp.MustCompile("[^a-z'0-9 ]")
 var WTBrequests = make(map[Player]map[Card]int)
 var Bot Player
 var currentState *State
-
-const MyRoom = "autobots" // you will need to change the room
+var Conf *Config
 
 func main() {
 	log.Print("main start...")
 
-	config := LoadConfig()
+	Conf = LoadConfig()
 
-	if config.Log {
+	if Conf.Log {
 		f, err := os.OpenFile("system.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 		deny(err)
 		log.SetOutput(f)
 		//log.SetOutput(ioutil.Discard)
 	}
 
-	if config.UseWebserver {
+	if Conf.UseWebserver {
 		go startWebServer()
 	}
 
 	for {
-		startBot(config.Email, config.Password, "Hello world!")
+		startBot(Conf.Email, Conf.Password, "Hello world!")
 	}
 }
 
@@ -48,12 +47,12 @@ func startBot(email, password, helloMessage string) {
 	s, chAlive := Connect(email, password)
 	currentState = s
 
-	s.JoinRoom(MyRoom)
+	s.JoinRoom(Conf.Room)
 	//s.JoinRoom("trading-1")
 	s.JoinRoom("trading-2")
 
 	if helloMessage != "" {
-		s.Say(MyRoom, helloMessage)
+		s.Say(Conf.Room, helloMessage)
 		s.Say("trading-1", helloMessage)
 	}
 
@@ -81,7 +80,7 @@ func startBot(email, password, helloMessage string) {
 					s.handlePostTrade(stockBefore, tradeStatus)
 					queue = queue[1:]
 					if len(queue) == 0 {
-						s.Say(MyRoom, "Finished trading.")
+						s.Say(Conf.Room, "Finished trading.")
 					} else {
 						chReadyToTrade <- true
 					}
