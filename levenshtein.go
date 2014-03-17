@@ -2,9 +2,13 @@ package main
 
 import (
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+var reNumbers = regexp.MustCompile(`x?(\d+)x?`)
+var reInvalidChars = regexp.MustCompile("[^a-z'0-9 ]")
 
 func Levenshtein(a, b string) int {
 	var cost int
@@ -101,7 +105,8 @@ func parseCardList(str string) (cards map[Card]int, ambiguousWords, failedWords 
 	failedWords = make([]string, 0)
 
 	for _, word := range strings.Split(str, ",") {
-		word = reInvalidChars.ReplaceAllString(strings.ToLower(word), "")
+		word = strings.TrimSpace(strings.ToLower(word))
+		word = reInvalidChars.ReplaceAllString(word, "")
 
 		num := 1
 		match := reNumbers.FindStringSubmatch(word)
