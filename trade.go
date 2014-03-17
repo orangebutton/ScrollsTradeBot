@@ -251,24 +251,7 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 
 		s.Say(TradeRoom, fmt.Sprintf("Welcome %s. This is an automated trading unit. If you don't know what to do, just say '!help'.", tradePartner))
 
-		request := WTBrequests[tradePartner]
-		if len(request) > 0 {
-			cardIds := make([]CardUid, 0)
-
-			for cardName, num := range request {
-				for _, card := range Libraries[Bot].Cards {
-					if card.Tradable && CardTypes[card.TypeId] == cardName {
-						cardIds = append(cardIds, card.Id)
-						num--
-						if num <= 0 {
-							break
-						}
-					}
-				}
-			}
-			s.SendRequest(Request{"msg": "TradeAddCards", "cardIds": cardIds})
-			s.Say(TradeRoom, "I've initialized the trade room with your last WTB request. You can !reset to undo this.")
-		}
+		s.initFromOldWTBRequest(tradePartner)
 
 		messages := s.Listen()
 		defer s.Shut(messages)
@@ -280,170 +263,29 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 				s.chQuit <- true
 				return
 			case m := <-messages:
-				if m.From == tradePartner && m.Channel == TradeRoom {
-					lastActivity = time.Now()
-					command := strings.ToLower(m.Text)
-
-					if command == "!help" {
-						s.Say(TradeRoom, "Just add the scrolls you want to sell on your side. To buy scrolls from me, say 'wtb [list of scrolls]'"+
-							" and I'll add everything I have on that list. You can also !add or !remove single cards."+
-							" Not sure about the gold? Just ask for the !price and I'll list it up.")
-
-					} else if command == "!donation" {
-						donation = !donation
-						if donation {
-							s.Say(TradeRoom, "I will consider everything you put into this trade as a donation. Much appreciated!"+
-								" If you change your mind, just repeat the command.")
-						} else {
-							s.Say(TradeRoom, "Okay :(")
-						}
-
-					} else if command == "!reset" {
-						for cardName, num := range ts.My.Cards {
-							for _, card := range Libraries[Bot].Cards {
-								if CardTypes[card.TypeId] == cardName && card.Tradable {
-									s.SendRequest(Request{"msg": "TradeRemoveCard", "cardId": card.Id})
-									num--
-									if num <= 0 {
-										break
-									}
-								}
-							}
-						}
-
-					} else if command == "!price" {
-						format := func(card Card, num int) string {
-							if num > 1 {
-								return fmt.Sprintf("%dx %s", num, card)
-							}
-							return string(card)
-						}
-
-						theirValue := make(map[string]int)
-						for card, num := range ts.Their.Cards {
-							theirValue[format(card, num)] = s.DeterminePrice(card, num, true)
-						}
-						myValue := make(map[string]int)
-						for card, num := range ts.My.Cards {
-							myValue[format(card, num)] = s.DeterminePrice(card, num, false)
-						}
-
-						list := func(value map[string]int) []string {
-							lines := make([]string, len(value))
-							for i, _ := range lines {
-								mostGold := 0
-								nextCard := ""
-
-								for card, gold := range value {
-									if gold > mostGold {
-										mostGold = gold
-										nextCard = card
-									}
-								}
-								lines[i] = fmt.Sprintf("%s for %dg", nextCard, mostGold)
-								value[nextCard] = 0
-							}
-							return lines
-						}
-						msg := ""
-						if len(theirValue) > 0 {
-							msg += fmt.Sprintf("I'll buy %s. ", strings.Join(list(theirValue), ", "))
-						}
-						if len(myValue) > 0 {
-							msg += fmt.Sprintf("I'll sell %s. ", strings.Join(list(myValue), ", "))
-						}
-						diff := ts.Their.Value - ts.My.Value
-						if diff < 0 {
-							msg += fmt.Sprintf("Thus you owe me %dg.", -diff)
-						} else {
-							msg += fmt.Sprintf("Thus I owe you %dg.", diff)
-						}
-						s.Say(m.Channel, msg)
-
-					} else if strings.HasPrefix(command, "!add") || strings.HasPrefix(command, "!wtb") || strings.HasPrefix(command, "wtb") {
-						cardlist := strings.TrimPrefix(command, "!add")
-						cardlist = strings.TrimPrefix(cardlist, "!wtb")
-						cardlist = strings.TrimPrefix(cardlist, "wtb")
-
-						cardIds := make([]CardUid, 0)
-
-						requestedCards, ambiguousWords, failedWords := parseCardList(cardlist)
-
-						WTBrequests[tradePartner] = requestedCards
-						if len(requestedCards) > 0 {
-							missing := make(map[Card]int)
-							for requestedCard, num := range requestedCards {
-								skip := ts.My.Cards[requestedCard]
-								for _, card := range Libraries[Bot].Cards {
-									if CardTypes[card.TypeId] != requestedCard || !card.Tradable {
-										continue
-									}
-									skip--
-									if num > 0 && skip < 0 {
-										cardIds = append(cardIds, card.Id)
-										num--
-									}
-								}
-								if num > 0 {
-									missing[requestedCard] = num
-								}
-							}
-
-							reply := ""
-							if len(missing) > 0 {
-								list := make([]string, 0, len(missing))
-								for card, num := range missing {
-									list = append(list, fmt.Sprintf("%dx %s", num, card))
-								}
-								reply = fmt.Sprintf("I don't have %s. ", strings.Join(list, ", "))
-							}
-							for _, word := range ambiguousWords {
-								reply += fmt.Sprintf("'%s' is %s. ", word, orify(matchCardName(word)))
-							}
-							if len(failedWords) > 0 {
-								reply += fmt.Sprintf("I don't know what '%s' is. ", cardlist)
-							}
-							if reply != "" {
-								s.Say(TradeRoom, reply)
-							}
-							if len(cardIds) > 0 {
-								s.SendRequest(Request{"msg": "TradeAddCards", "cardIds": cardIds})
-							}
-						}
-
-					} else if command == "!remove" {
-						s.Say(TradeRoom, "You have to name the card that I will remove.")
-
-					} else if strings.HasPrefix(command, "!remove") {
-						params := strings.TrimPrefix(command, "!remove ")
-						matchedCards := matchCardName(params)
-						switch len(matchedCards) {
-						case 0:
-							s.Say(m.Channel, fmt.Sprintf("There is no scroll named '%s'.", params))
-						case 1:
-							card := matchedCards[0]
-							alreadyOffered := ts.My.Cards[card]
-							if alreadyOffered == 0 {
-								s.Say(m.Channel, fmt.Sprintf("%s is not part of this trade!", card))
-							} else {
-								for _, mcard := range Libraries[Bot].Cards {
-									if mcard.Tradable && CardTypes[mcard.TypeId] == card {
-										if alreadyOffered == 1 {
-											s.SendRequest(Request{"msg": "TradeRemoveCard", "cardId": mcard.Id})
-											break
-										}
-										alreadyOffered--
-									}
-								}
-							}
-						default:
-							s.Say(m.Channel, fmt.Sprintf("'%s' is %s.", params, matchCardName(params)))
-						}
-					}
-				}
-
 				if m.From == "Scrolls" && m.Channel == TradeRoom && strings.HasPrefix(m.Text, "Trade ended") {
 					return
+				}
+				if m.From == tradePartner && m.Channel == TradeRoom {
+					lastActivity = time.Now()
+
+					command := strings.TrimSpace(strings.ToLower(m.Text))
+					if command == "!help" {
+						s.handleTradeHelp(TradeRoom)
+					} else if command == "!donation" {
+						donation = !donation
+						s.handleDonation(donation, TradeRoom)
+					} else if command == "!reset" {
+						s.handleReset(ts)
+					} else if command == "!price" {
+						s.handleTradePrice(ts, TradeRoom)
+					} else if strings.HasPrefix(command, "!add") || strings.HasPrefix(command, "!wtb") || strings.HasPrefix(command, "wtb") {
+						s.handleAdd(ts, tradePartner, command)
+					} else if command == "!remove" {
+						s.Say(TradeRoom, "You have to name the card that I will remove.")
+					} else if strings.HasPrefix(command, "!remove") {
+						s.handleRemove(command, ts, TradeRoom)
+					}
 				}
 
 			case newTradeStatus := <-chTradeStatus:
@@ -455,47 +297,7 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 				}
 
 				if ts.My.Accepted && ts.Their.Accepted {
-					s.Say(TradeRoom, "Thanks!")
-					if donation {
-						if diff := ts.Their.Value + ts.Their.Gold - ts.My.Value - ts.My.Gold; diff > 0 {
-							s.Say(Conf.Room, fmt.Sprintf("%s just donated stuff worth %dg. Praise to them!", tradePartner, diff))
-						}
-					}
-
-					Gold += ts.Their.Gold
-					Gold -= ts.My.Gold
-					for card, num := range ts.Their.Cards {
-						Stocks[Bot][card] += num
-					}
-					for card, num := range ts.My.Cards {
-						Stocks[Bot][card] -= num
-					}
-
-					alreadySold := make(map[Card]bool)
-					cardIds := make([]CardUid, 0)
-
-					for _, card := range Libraries[Bot].Cards {
-						cardName := CardTypes[card.TypeId]
-						if !alreadySold[cardName] && card.Tradable && s.DeterminePrice(cardName, 1, true) <= MinimumValue(cardName) {
-							alreadySold[cardName] = true
-							cardIds = append(cardIds, card.Id)
-						}
-					}
-					if len(cardIds) > 0 {
-						s.SendRequest(Request{"msg": "SellCards", "cardIds": cardIds})
-						for _, id := range cardIds {
-							for _, card := range Libraries[Bot].Cards {
-								if card.Id == id {
-									name := CardTypes[card.TypeId]
-									Stocks[Bot][name] = Stocks[Bot][name] - 1
-									Gold += MinimumValue(name)
-									break
-								}
-							}
-						}
-					}
-					WTBrequests[tradePartner] = nil
-					logTrade(ts)
+					s.finishTrade(donation, tradePartner, ts)
 					return
 				}
 
@@ -596,4 +398,228 @@ func logTrade(ts TradeStatus) {
 
 	io.WriteString(file, fmt.Sprintf("%s: Traded with %s.\nTheir offer: [%dg] %s\nMy offer: [%dg] %s\n\n",
 		time.Now().String(), ts.Partner, ts.Their.Gold, list(ts.Their.Cards), ts.My.Gold, list(ts.My.Cards)))
+}
+
+func (s *State) handleDonation(donation bool, tradeRoom Channel) {
+	if donation {
+		s.Say(TradeRoom, "I will consider everything you put into this trade as a donation. Much appreciated!"+
+			" If you change your mind, just repeat the command.")
+	} else {
+		s.Say(TradeRoom, "Okay :(")
+	}
+}
+
+func (s *State) handleReset(ts TradeStatus) {
+	for cardName, num := range ts.My.Cards {
+		for _, card := range Libraries[Bot].Cards {
+			if CardTypes[card.TypeId] == cardName && card.Tradable {
+				s.SendRequest(Request{"msg": "TradeRemoveCard", "cardId": card.Id})
+				num--
+				if num <= 0 {
+					break
+				}
+			}
+		}
+	}
+}
+
+func (s *State) handleTradePrice(ts TradeStatus, tradeRoom Channel) {
+	format := func(card Card, num int) string {
+		if num > 1 {
+			return fmt.Sprintf("%dx %s", num, card)
+		}
+		return string(card)
+	}
+
+	theirValue := make(map[string]int)
+	for card, num := range ts.Their.Cards {
+		theirValue[format(card, num)] = s.DeterminePrice(card, num, true)
+	}
+	myValue := make(map[string]int)
+	for card, num := range ts.My.Cards {
+		myValue[format(card, num)] = s.DeterminePrice(card, num, false)
+	}
+
+	list := func(value map[string]int) []string {
+		lines := make([]string, len(value))
+		for i, _ := range lines {
+			mostGold := 0
+			nextCard := ""
+
+			for card, gold := range value {
+				if gold > mostGold {
+					mostGold = gold
+					nextCard = card
+				}
+			}
+			lines[i] = fmt.Sprintf("%s for %dg", nextCard, mostGold)
+			value[nextCard] = 0
+		}
+		return lines
+	}
+	msg := ""
+	if len(theirValue) > 0 {
+		msg += fmt.Sprintf("I'll buy %s. ", strings.Join(list(theirValue), ", "))
+	}
+	if len(myValue) > 0 {
+		msg += fmt.Sprintf("I'll sell %s. ", strings.Join(list(myValue), ", "))
+	}
+	diff := ts.Their.Value - ts.My.Value
+	if diff < 0 {
+		msg += fmt.Sprintf("Thus you owe me %dg.", -diff)
+	} else {
+		msg += fmt.Sprintf("Thus I owe you %dg.", diff)
+	}
+	s.Say(tradeRoom, msg)
+}
+
+func (s *State) handleAdd(ts TradeStatus, tradePartner Player, command string) {
+	cardlist := strings.TrimPrefix(command, "!add")
+	cardlist = strings.TrimPrefix(cardlist, "!wtb")
+	cardlist = strings.TrimPrefix(cardlist, "wtb")
+
+	cardIds := make([]CardUid, 0)
+
+	requestedCards, ambiguousWords, failedWords := parseCardList(cardlist)
+
+	WTBrequests[tradePartner] = requestedCards
+	if len(requestedCards) > 0 {
+		missing := make(map[Card]int)
+		for requestedCard, num := range requestedCards {
+			skip := ts.My.Cards[requestedCard]
+			for _, card := range Libraries[Bot].Cards {
+				if CardTypes[card.TypeId] != requestedCard || !card.Tradable {
+					continue
+				}
+				skip--
+				if num > 0 && skip < 0 {
+					cardIds = append(cardIds, card.Id)
+					num--
+				}
+			}
+			if num > 0 {
+				missing[requestedCard] = num
+			}
+		}
+
+		reply := ""
+		if len(missing) > 0 {
+			list := make([]string, 0, len(missing))
+			for card, num := range missing {
+				list = append(list, fmt.Sprintf("%dx %s", num, card))
+			}
+			reply = fmt.Sprintf("I don't have %s. ", strings.Join(list, ", "))
+		}
+		for _, word := range ambiguousWords {
+			reply += fmt.Sprintf("'%s' is %s. ", word, orify(matchCardName(word)))
+		}
+		if len(failedWords) > 0 {
+			reply += fmt.Sprintf("I don't know what '%s' is. ", cardlist)
+		}
+		if reply != "" {
+			s.Say(TradeRoom, reply)
+		}
+		if len(cardIds) > 0 {
+			s.SendRequest(Request{"msg": "TradeAddCards", "cardIds": cardIds})
+		}
+	}
+}
+
+func (s *State) handleRemove(command string, ts TradeStatus, tradeRoom Channel) {
+	params := strings.TrimPrefix(command, "!remove ")
+	matchedCards := matchCardName(params)
+	switch len(matchedCards) {
+	case 0:
+		s.Say(tradeRoom, fmt.Sprintf("There is no scroll named '%s'.", params))
+	case 1:
+		card := matchedCards[0]
+		alreadyOffered := ts.My.Cards[card]
+		if alreadyOffered == 0 {
+			s.Say(tradeRoom, fmt.Sprintf("%s is not part of this trade!", card))
+		} else {
+			for _, mcard := range Libraries[Bot].Cards {
+				if mcard.Tradable && CardTypes[mcard.TypeId] == card {
+					if alreadyOffered == 1 {
+						s.SendRequest(Request{"msg": "TradeRemoveCard", "cardId": mcard.Id})
+						break
+					}
+					alreadyOffered--
+				}
+			}
+		}
+	default:
+		s.Say(tradeRoom, fmt.Sprintf("'%s' is %s.", params, matchCardName(params)))
+	}
+
+}
+
+func (s *State) handleTradeHelp(tradeRoom Channel) {
+	s.Say(tradeRoom, "Just add the scrolls you want to sell on your side. To buy scrolls from me, say 'wtb [list of scrolls]'"+
+		" and I'll add everything I have on that list. You can also !add or !remove single cards."+
+		" Not sure about the gold? Just ask for the !price and I'll list it up.")
+}
+
+func (s *State) initFromOldWTBRequest(tradePartner Player) {
+	request := WTBrequests[tradePartner]
+	if len(request) > 0 {
+		cardIds := make([]CardUid, 0)
+
+		for cardName, num := range request {
+			for _, card := range Libraries[Bot].Cards {
+				if card.Tradable && CardTypes[card.TypeId] == cardName {
+					cardIds = append(cardIds, card.Id)
+					num--
+					if num <= 0 {
+						break
+					}
+				}
+			}
+		}
+		s.SendRequest(Request{"msg": "TradeAddCards", "cardIds": cardIds})
+		s.Say(TradeRoom, "I've initialized the trade room with your last WTB request. You can !reset to undo this.")
+	}
+}
+
+func (s *State) finishTrade(donation bool, tradePartner Player, ts TradeStatus) {
+	s.Say(TradeRoom, "Thanks!")
+	if donation {
+		if diff := ts.Their.Value + ts.Their.Gold - ts.My.Value - ts.My.Gold; diff > 0 {
+			s.Say(Conf.Room, fmt.Sprintf("%s just donated stuff worth %dg. Praise to them!", tradePartner, diff))
+		}
+	}
+
+	Gold += ts.Their.Gold
+	Gold -= ts.My.Gold
+	for card, num := range ts.Their.Cards {
+		Stocks[Bot][card] += num
+	}
+	for card, num := range ts.My.Cards {
+		Stocks[Bot][card] -= num
+	}
+
+	alreadySold := make(map[Card]bool)
+	cardIds := make([]CardUid, 0)
+
+	for _, card := range Libraries[Bot].Cards {
+		cardName := CardTypes[card.TypeId]
+		if !alreadySold[cardName] && card.Tradable && s.DeterminePrice(cardName, 1, true) <= MinimumValue(cardName) {
+			alreadySold[cardName] = true
+			cardIds = append(cardIds, card.Id)
+		}
+	}
+	if len(cardIds) > 0 {
+		s.SendRequest(Request{"msg": "SellCards", "cardIds": cardIds})
+		for _, id := range cardIds {
+			for _, card := range Libraries[Bot].Cards {
+				if card.Id == id {
+					name := CardTypes[card.TypeId]
+					Stocks[Bot][name] = Stocks[Bot][name] - 1
+					Gold += MinimumValue(name)
+					break
+				}
+			}
+		}
+	}
+	WTBrequests[tradePartner] = nil
+	logTrade(ts)
 }
