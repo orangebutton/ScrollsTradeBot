@@ -7,10 +7,11 @@ import (
 )
 
 const helpText string = "Add the scrolls you want to sell on your side. " +
-	"To buy scrolls from me, say 'wtb [list of scrolls]'. " +
-	"You can also !add or !remove single cards. " +
+	"To buy scrolls from me, !add or !remove cards. " +
+	"To find the price of a card use !price, !wtb or !wts. " +
 	"If you want to start over you can always !reset. " +
-	"You may want to know the !price of a card. " +
+	"I can show you how I calculated the !total. " +
+	"You can check the !stock and the !missing cards. " +
 	"A !donation is always welcome."
 
 func (s *State) TradeMessageHandler(donation bool, m Message, tradePartner Player, ts TradeStatus) bool {
@@ -19,17 +20,29 @@ func (s *State) TradeMessageHandler(donation bool, m Message, tradePartner Playe
 	switch command {
 	case "!help":
 		s.handleTradeHelp(m.Channel)
-	case "!add", "!wtb":
+	case "!add":
 		s.handleAdd(ts, tradePartner, args)
 	case "!remove":
-		s.handleRemove(command, ts, m.Channel)
+		s.handleRemove(args, ts, m.Channel)
 	case "!reset":
 		s.handleReset(ts)
-	case "!price":
-		s.handleTradePrice(ts, m.Channel)
+	case "!total":
+		s.handleTotal(ts, m.Channel)
 	case "!donation":
 		donation = !donation
 		s.handleDonation(donation, m.Channel)
+
+	case "!wtb":
+		s.Say(m.Channel, s.handleWTB(args, m.From))
+	case "!wts":
+		s.Say(m.Channel, s.handleWTS(args))
+	case "!price":
+		s.Say(m.Channel, s.handlePrice(args))
+	case "!stock":
+		s.Say(m.Channel, s.handleStock())
+	case "!missing":
+		s.Say(m.Channel, handleMissing())
+
 	}
 	return donation
 }
@@ -89,13 +102,13 @@ func (s *State) handleAdd(ts TradeStatus, tradePartner Player, args string) {
 func (s *State) handleRemove(args string, ts TradeStatus, tradeRoom Channel) {
 	if len(args) == 0 {
 		s.Say(TradeRoom, "You have to name the card that I will remove.")
+		return
 	}
 
-	params := strings.TrimPrefix(args, "!remove ")
-	matchedCards := matchCardName(params)
+	matchedCards := matchCardName(args)
 	switch len(matchedCards) {
 	case 0:
-		s.Say(tradeRoom, fmt.Sprintf("There is no scroll named '%s'.", params))
+		s.Say(tradeRoom, fmt.Sprintf("There is no scroll named '%s'.", args))
 	case 1:
 		card := matchedCards[0]
 		alreadyOffered := ts.My.Cards[card]
@@ -113,7 +126,7 @@ func (s *State) handleRemove(args string, ts TradeStatus, tradeRoom Channel) {
 			}
 		}
 	default:
-		s.Say(tradeRoom, fmt.Sprintf("'%s' is %s.", params, matchCardName(params)))
+		s.Say(tradeRoom, fmt.Sprintf("'%s' is %s.", args, matchCardName(args)))
 	}
 }
 
@@ -131,7 +144,7 @@ func (s *State) handleReset(ts TradeStatus) {
 	}
 }
 
-func (s *State) handleTradePrice(ts TradeStatus, tradeRoom Channel) {
+func (s *State) handleTotal(ts TradeStatus, tradeRoom Channel) {
 	format := func(card Card, num int) string {
 		if num > 1 {
 			return fmt.Sprintf("%dx %s", num, card)
