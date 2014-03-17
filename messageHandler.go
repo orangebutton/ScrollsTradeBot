@@ -8,8 +8,9 @@ import (
 
 func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bool) []Player {
 
+	// the trade handler has its own message handler
 	// ignore chat messages from trading-x
-	if strings.HasPrefix(string(m.Channel), "trading-") {
+	if m.Channel == TradeRoom || strings.HasPrefix(string(m.Channel), "trading-") {
 		return queue
 	}
 
