@@ -16,7 +16,7 @@ func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bo
 
 	forceWhisper := false
 	replyMsg := ""
-	command, args := getCommand(m)
+	command, args := ParseCommandAndArgs(m)
 
 	switch command {
 	case "!help":
@@ -58,6 +58,26 @@ func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bo
 		s.sayReplay(replyMsg, forceWhisper, m)
 	}
 	return queue
+}
+
+func ParseCommandAndArgs(m Message) (command, args string) {
+
+	if m.From == "Great_Marcoosai" {
+		return "", ""
+	}
+
+	text := strings.TrimSpace(strings.ToLower(m.Text))
+	strs := strings.SplitN(text, " ", 2)
+	command = strings.TrimSpace(strs[0])
+	if len(strs) > 1 {
+		args = strings.TrimSpace(strs[1])
+	}
+
+	if !strings.HasPrefix(text, "!") {
+		command = "!" + command
+	}
+
+	return command, args
 }
 
 func handleMissing() string {
@@ -243,49 +263,6 @@ func (s *State) handlePrice(args string) (replyMsg string) {
 	return
 }
 
-func (s *State) sayReplay(replyMsg string, forceWhisper bool, m Message) {
-	if m.Channel == "WHISPER" {
-		s.Whisper(m.From, replyMsg)
-	} else {
-		if forceWhisper {
-			s.Whisper(m.From, replyMsg)
-			s.Whisper(m.From, "To avoid spamming the channel, please use this command only in whisper. "+
-				"By the way, you can use any other command in whisper as well (even without the ! in the front).")
-		} else {
-			s.Say(m.Channel, replyMsg)
-		}
-	}
-}
-
-func getCommand(m Message) (command, args string) {
-
-	if m.From == "Great_Marcoosai" {
-		return "", ""
-	}
-
-	text := strings.TrimSpace(strings.ToLower(m.Text))
-	strs := strings.SplitN(text, " ", 2)
-	command = strings.TrimSpace(strs[0])
-	if len(strs) > 1 {
-		args = strings.TrimSpace(strs[1])
-	}
-
-	if !strings.HasPrefix(text, "!") {
-		command = "!" + command
-	}
-
-	return command, args
-}
-
-func queuePosition(target Player, queue []Player) int {
-	for i, player := range queue {
-		if player == target {
-			return i
-		}
-	}
-	return -1
-}
-
 func handleTrade(m Message, queue []Player) string {
 	pos := queuePosition(m.From, queue)
 	if pos >= 0 {
@@ -334,5 +311,28 @@ func (s *State) handlePostTrade(stockBefore map[Card]int, ts TradeStatus) {
 	}
 	if len(lost) > 0 {
 		s.Say(Conf.Room, fmt.Sprintf("I've just sold my last %s.", andify(lost)))
+	}
+}
+
+func queuePosition(target Player, queue []Player) int {
+	for i, player := range queue {
+		if player == target {
+			return i
+		}
+	}
+	return -1
+}
+
+func (s *State) sayReplay(replyMsg string, forceWhisper bool, m Message) {
+	if m.Channel == "WHISPER" {
+		s.Whisper(m.From, replyMsg)
+	} else {
+		if forceWhisper {
+			s.Whisper(m.From, replyMsg)
+			s.Whisper(m.From, "To avoid spamming the channel, please use this command only in whisper. "+
+				"By the way, you can use any other command in whisper as well (even without the ! in the front).")
+		} else {
+			s.Say(m.Channel, replyMsg)
+		}
 	}
 }
