@@ -55,7 +55,7 @@ func sellValue(card Card, stocked int) float64 {
 
 	discount := 1.0 - (float64(stocked-1))/Conf.MaxNumToBuy
 	price := math.Max(minPrice, (basePrice * discount))
-	return math.Ceil(price)
+	return math.Floor(price)
 }
 
 func buyValue(card Card, stocked int) float64 {
@@ -66,7 +66,7 @@ func buyValue(card Card, stocked int) float64 {
 
 	discount := 1.0 - (float64(stocked-1))/Conf.MaxNumToBuy
 	price := math.Max(minPrice, (basePrice * discount * goldFactor))
-	return math.Ceil(price)
+	return math.Floor(price)
 }
 
 func (s *State) DeterminePrice(card Card, num int, buy bool) int {
