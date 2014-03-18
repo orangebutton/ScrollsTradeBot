@@ -1,21 +1,13 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
-	"math"
-	"net/http"
 	"os"
 	"strings"
 	"time"
 )
-
-type Price struct{ Buy, Sell int }
-
-var SGPrices = make(map[Card]Price)
 
 var Gold int
 
@@ -40,118 +32,6 @@ type TradeStatus struct {
 
 func GoldForTrade() int {
 	return Gold / Conf.GoldDivisor
-}
-
-func LoadPrices() {
-	resp, err := http.Get("http://a.scrollsguide.com/prices")
-	deny(err)
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	deny(err)
-
-	type JSON struct {
-		Msg  string
-		Data []struct {
-			Id       CardId
-			Buy      int
-			Sell     int
-			LastSeen int
-		}
-		ApiVersion int
-	}
-
-	var v JSON
-	err = json.Unmarshal(body, &v)
-	deny(err)
-
-	for id, name := range CardTypes {
-		p := Price{Buy: MinimumValue(name), Sell: MaximumValue(name)}
-		for _, data := range v.Data {
-			if data.Id == id {
-				if data.Buy > p.Buy {
-					p.Buy = data.Buy
-				}
-				if data.Sell < p.Sell {
-					p.Sell = data.Sell
-				}
-			}
-		}
-		if p.Sell < p.Buy {
-			t := (p.Sell + p.Buy) / 2
-			p.Sell, p.Buy = t, t
-		}
-		SGPrices[name] = p
-	}
-}
-
-func MinimumValue(card Card) int {
-	switch CardRarities[card] {
-	case 0:
-		return 25
-	case 1:
-		return 50
-	case 2:
-		return 100
-	}
-	return -1
-}
-
-func MaximumValue(card Card) int {
-	switch CardRarities[card] {
-	case 0:
-		return 150
-	case 1:
-		return 600
-	case 2:
-		return 1200
-	}
-	return -1
-}
-
-func (s *State) DeterminePrice(card Card, num int, buy bool) int {
-	if Conf.UseScrollsGuidePrice {
-		if buy {
-			return SGPrices[card].Buy * num
-		} else {
-			return SGPrices[card].Sell * num
-		}
-	} else {
-		// return clockworkPricing(card, num, buy)
-		return autobotsPricing(card, num, buy)
-	}
-}
-
-func pricingBasedOnInventory(card Card, num int, buy bool) int {
-	price := 0
-	stocked := Stocks[Bot][card]
-
-	value := func(card Card, stocked int) float64 {
-		basePrice := float64(MaximumValue(card))
-		return basePrice * (1.0 - 1./Conf.MaxNumToBuy*float64(stocked))
-	}
-
-	goldFactor := math.Min(float64(GoldForTrade()), Conf.GoldThreshold)/(Conf.GoldThreshold*2) + 0.5
-	for i := 0; i < num; i++ {
-		if buy {
-			price += int(math.Max(float64(MinimumValue(card)), value(card, stocked)*goldFactor))
-			stocked++
-		} else {
-			price += int(math.Max(float64(MinimumValue(card)), value(card, stocked)*1.00))
-			stocked--
-		}
-	}
-	return price
-}
-
-func autobotsPricing(card Card, num int, buy bool) int {
-	price := 0
-	if buy {
-		price = num * MinimumValue(card)
-	} else {
-		price = pricingBasedOnInventory(card, num, buy)
-	}
-	return price
 }
 
 func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
@@ -254,28 +134,11 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 
 				if cardsChanged && time.Now().After(lastActivity.Add(time.Second*2)) {
 					cardsChanged = false
-
-					value := ts.Their.Value - ts.My.Value
-					if value > GoldForTrade() && !donation {
-						s.Say(TradeRoom, fmt.Sprintf("Sorry - I only have %d gold at my disposal. Please take something out. Or is this a !donation?", GoldForTrade()))
-					} else if value < 0 {
-						s.Say(TradeRoom, fmt.Sprintf("Please set your gold offer to %dg", -value))
-					}
+					s.sayGoldOwed(ts, donation)
 				}
-
-				myGain := ts.Their.Value + ts.Their.Gold
-				theirGain := ts.My.Value + ts.My.Gold
-				canAccept := false
-
-				if myGain >= theirGain && myGain > 0 {
-					canAccept = true
-					if !donation {
-						canAccept = myGain == theirGain
-					}
-				}
+				canAccept := isFairTrade(donation, ts)
 
 				// s.Say(TradeRoom, fmt.Sprintf("%d %d %s %s", myGain, theirGain, canAccept, donation))
-
 				if canAccept && !ts.My.Accepted && time.Now().After(lastActivity.Add(time.Second*7)) {
 					s.SendRequest(Request{"msg": "TradeAcceptBargain"})
 				}
@@ -341,17 +204,6 @@ func (s *State) initFromOldWTBRequest(tradePartner Player) {
 	}
 }
 
-func updateInventory(ts TradeStatus) {
-	Gold += ts.Their.Gold
-	Gold -= ts.My.Gold
-	for card, num := range ts.Their.Cards {
-		Stocks[Bot][card] += num
-	}
-	for card, num := range ts.My.Cards {
-		Stocks[Bot][card] -= num
-	}
-}
-
 func (s *State) finishTrade(donation bool, tradePartner Player, ts TradeStatus) {
 	s.Say(TradeRoom, "Thanks!")
 	if donation {
@@ -364,6 +216,17 @@ func (s *State) finishTrade(donation bool, tradePartner Player, ts TradeStatus) 
 
 	WTBrequests[tradePartner] = nil
 	logTrade(ts)
+}
+
+func updateInventory(ts TradeStatus) {
+	Gold += ts.Their.Gold
+	Gold -= ts.My.Gold
+	for card, num := range ts.Their.Cards {
+		Stocks[Bot][card] += num
+	}
+	for card, num := range ts.My.Cards {
+		Stocks[Bot][card] -= num
+	}
 }
 
 func (s *State) ParseTradeResponse(v MTradeResponse) {
@@ -416,7 +279,7 @@ func (s *State) sellExcessInventoryToStore() {
 	for _, card := range Libraries[Bot].Cards {
 		cardName := CardTypes[card.TypeId]
 		if !alreadySold[cardName] && card.Tradable &&
-			s.DeterminePrice(cardName, 1, false) <= MinimumValue(cardName) {
+			s.DeterminePrice(cardName, 1, false) <= StoreValue(cardName) {
 
 			alreadySold[cardName] = true
 			cardIds = append(cardIds, card.Id)
@@ -430,12 +293,35 @@ func (s *State) sellExcessInventoryToStore() {
 				if card.Id == id {
 					name := CardTypes[card.TypeId]
 					Stocks[Bot][name] = Stocks[Bot][name] - 1
-					Gold += MinimumValue(name)
+					Gold += StoreValue(name)
 					break
 				}
 			}
 		}
 	}
+}
+
+func (s *State) sayGoldOwed(ts TradeStatus, donation bool) {
+	value := ts.Their.Value - ts.My.Value
+	if value > GoldForTrade() && !donation {
+		s.Say(TradeRoom, fmt.Sprintf("Sorry - I only have %d gold at my disposal. Please take something out. Or is this a !donation?", GoldForTrade()))
+	} else if value < 0 {
+		s.Say(TradeRoom, fmt.Sprintf("Please set your gold offer to %dg", -value))
+	}
+}
+
+func isFairTrade(donation bool, ts TradeStatus) bool {
+	myGain := ts.Their.Value + ts.Their.Gold
+	theirGain := ts.My.Value + ts.My.Gold
+	canAccept := false
+
+	if myGain >= theirGain && myGain > 0 {
+		canAccept = true
+		if !donation {
+			canAccept = (myGain == theirGain)
+		}
+	}
+	return canAccept
 }
 
 func logTrade(ts TradeStatus) {
