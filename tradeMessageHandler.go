@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const helpText string = "Add the scrolls you want to sell on your side. " +
+const tradeHelpText string = "Add the scrolls you want to sell on your side. " +
 	"To buy scrolls from me, !add or !remove cards. " +
 	"To find the price of a card use !price, !wtb or !wts. " +
 	"If you want to start over you can always !reset. " +
@@ -48,7 +48,7 @@ func (s *State) TradeMessageHandler(donation bool, m Message, tradePartner Playe
 }
 
 func (s *State) handleTradeHelp(tradeRoom Channel) {
-	s.Say(tradeRoom, helpText)
+	s.Say(tradeRoom, tradeHelpText)
 }
 
 func (s *State) handleAdd(ts TradeStatus, tradePartner Player, args string) {
