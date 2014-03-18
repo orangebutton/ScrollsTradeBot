@@ -3,17 +3,15 @@ package main
 import (
 	"log"
 	"os"
-	"regexp"
 	"time"
 )
 
-var reNumbers = regexp.MustCompile(`x?(\d+)x?`)
-var reInvalidChars = regexp.MustCompile("[^a-z'0-9 ]")
+const helloMessage = "selling - tons of cards - type '!help'' in the autobots room to find out how trade with me."
 
 var WTBrequests = make(map[Player]map[Card]int)
 var Bot Player
-var currentState *State
 var Conf *Config
+var currentState *State
 
 func main() {
 	log.Print("main start...")
@@ -32,13 +30,7 @@ func main() {
 	}
 
 	for {
-		startBot(Conf.Email, Conf.Password, "Hello world!")
-	}
-}
-
-func deny(err error) {
-	if err != nil {
-		panic(err)
+		startBot(Conf.Email, Conf.Password, helloMessage)
 	}
 }
 
@@ -48,12 +40,13 @@ func startBot(email, password, helloMessage string) {
 	currentState = s
 
 	s.JoinRoom(Conf.Room)
-	//s.JoinRoom("trading-1")
+	s.JoinRoom("trading-1")
 	s.JoinRoom("trading-2")
 
 	if helloMessage != "" {
 		s.Say(Conf.Room, helloMessage)
 		s.Say("trading-1", helloMessage)
+		s.Say("trading-2", helloMessage)
 	}
 
 	//upSince := time.Now()
@@ -118,5 +111,11 @@ func startBot(email, password, helloMessage string) {
 				return
 			}
 		}
+	}
+}
+
+func deny(err error) {
+	if err != nil {
+		panic(err)
 	}
 }
