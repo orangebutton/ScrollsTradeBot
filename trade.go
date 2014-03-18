@@ -158,7 +158,8 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 	// Send them a trade invite and see if they accept
 	chTradeStatus := s.initiateTrade(tradePartner, 40*time.Second)
 	if chTradeStatus != nil {
-		defer s.LeaveRoom(TradeRoom)
+		// lets stay in the trade room so that they can send us messages
+		// defer s.LeaveRoom(TradeRoom)
 		lastActivity := time.Now()
 		startTime := time.Now()
 
@@ -202,6 +203,7 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 
 				if ts.My.Accepted && ts.Their.Accepted {
 					s.finishTrade(donation, tradePartner, ts)
+					//sellExcessInventoryToStore()
 					return
 				}
 
@@ -339,14 +341,7 @@ func (s *State) initFromOldWTBRequest(tradePartner Player) {
 	}
 }
 
-func (s *State) finishTrade(donation bool, tradePartner Player, ts TradeStatus) {
-	s.Say(TradeRoom, "Thanks!")
-	if donation {
-		if diff := ts.Their.Value + ts.Their.Gold - ts.My.Value - ts.My.Gold; diff > 0 {
-			s.Say(Conf.Room, fmt.Sprintf("%s just donated stuff worth %dg. Praise to them!", tradePartner, diff))
-		}
-	}
-
+func updateInventory(ts TradeStatus) {
 	Gold += ts.Their.Gold
 	Gold -= ts.My.Gold
 	for card, num := range ts.Their.Cards {
@@ -355,30 +350,18 @@ func (s *State) finishTrade(donation bool, tradePartner Player, ts TradeStatus) 
 	for card, num := range ts.My.Cards {
 		Stocks[Bot][card] -= num
 	}
+}
 
-	alreadySold := make(map[Card]bool)
-	cardIds := make([]CardUid, 0)
-
-	for _, card := range Libraries[Bot].Cards {
-		cardName := CardTypes[card.TypeId]
-		if !alreadySold[cardName] && card.Tradable && s.DeterminePrice(cardName, 1, true) <= MinimumValue(cardName) {
-			alreadySold[cardName] = true
-			cardIds = append(cardIds, card.Id)
+func (s *State) finishTrade(donation bool, tradePartner Player, ts TradeStatus) {
+	s.Say(TradeRoom, "Thanks!")
+	if donation {
+		if diff := ts.Their.Value + ts.Their.Gold - ts.My.Value - ts.My.Gold; diff > 0 {
+			s.Say(Conf.Room, fmt.Sprintf("%s just donated stuff worth %dg. Praise to them!", tradePartner, diff))
 		}
 	}
-	if len(cardIds) > 0 {
-		s.SendRequest(Request{"msg": "SellCards", "cardIds": cardIds})
-		for _, id := range cardIds {
-			for _, card := range Libraries[Bot].Cards {
-				if card.Id == id {
-					name := CardTypes[card.TypeId]
-					Stocks[Bot][name] = Stocks[Bot][name] - 1
-					Gold += MinimumValue(name)
-					break
-				}
-			}
-		}
-	}
+
+	updateInventory(ts)
+
 	WTBrequests[tradePartner] = nil
 	logTrade(ts)
 }
@@ -425,6 +408,34 @@ func (s *State) ParseTradeView(v MTradeView) {
 	ts.My.Gold = my.Gold
 
 	s.chTradeStatus <- ts
+}
+
+func (s *State) sellExcessInventoryToStore() {
+	cardIds := make([]CardUid, 0)
+	alreadySold := make(map[Card]bool)
+	for _, card := range Libraries[Bot].Cards {
+		cardName := CardTypes[card.TypeId]
+		if !alreadySold[cardName] && card.Tradable &&
+			s.DeterminePrice(cardName, 1, false) <= MinimumValue(cardName) {
+
+			alreadySold[cardName] = true
+			cardIds = append(cardIds, card.Id)
+		}
+	}
+
+	if len(cardIds) > 0 {
+		s.SendRequest(Request{"msg": "SellCards", "cardIds": cardIds})
+		for _, id := range cardIds {
+			for _, card := range Libraries[Bot].Cards {
+				if card.Id == id {
+					name := CardTypes[card.TypeId]
+					Stocks[Bot][name] = Stocks[Bot][name] - 1
+					Gold += MinimumValue(name)
+					break
+				}
+			}
+		}
+	}
 }
 
 func logTrade(ts TradeStatus) {
