@@ -2,9 +2,13 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
 	"strings"
 )
+
+const helpText string = "You can whisper me WTS or WTB requests. " +
+	"If you're interested in trading, you can '!trade' with me. " +
+	"You can also check the '!stock' and what is '!missing.' " +
+	"Prices are based on inventory. To get good deals on cards check my prices often. "
 
 func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bool) []Player {
 
@@ -20,7 +24,7 @@ func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bo
 
 	switch command {
 	case "!help":
-		replyMsg = "You can whisper me WTS or WTB requests. If you're interested in trading, you can queue up with '!trade'. You can also check the '!stock' and what is '!missing.'"
+		replyMsg = helpText
 		forceWhisper = (m.Channel == TradeRoom)
 	case "!stock":
 		replyMsg = s.handleStock()
@@ -36,20 +40,29 @@ func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bo
 	case "!missing":
 		replyMsg = handleMissing()
 		forceWhisper = (m.Channel == TradeRoom)
-	case "!say":
-		if m.From == Conf.Owner {
-			s.Say(Conf.Room, args)
-		}
-	case "!sayTrading":
-		if m.From == Conf.Owner {
-			s.Say("trading-1", args)
-		}
+
 	case "!trade", "!queue":
 		replyMsg = handleTrade(m, queue)
 		queue = append(queue, m.From)
 		if len(queue) == 1 {
 			chReadyToTrade <- true
 		}
+
+	// superuser commands
+	case "!say":
+		if m.From == Conf.Owner {
+			tokens := strings.SplitN(args, " ", 2)
+			s.Say(Channel(tokens[0]), tokens[1])
+		}
+	case "!join":
+		if m.From == Conf.Owner {
+			s.JoinRoom(Channel(args))
+		}
+	case "!leave":
+		if m.From == Conf.Owner {
+			s.LeaveRoom(Channel(args))
+		}
+
 		//case "!uptime":
 		//	replyMsg = fmt.Sprintf("Up since %s", time.Since(upSince))
 	} // end switch
@@ -234,31 +247,29 @@ func (s *State) handleWTS(args string) (replyMsg string) {
 
 func (s *State) handlePrice(args string) (replyMsg string) {
 	matchedCards := matchCardName(args)
-	switch len(matchedCards) {
-	case 0:
-		replyMsg = fmt.Sprintf("There is no card named '%s'", args)
-	case 1:
-		card := matchedCards[0]
-		stocked := Stocks[Bot][card]
-		if stocked == 0 {
-			price := s.DeterminePrice(card, 1, true)
-			replyMsg = string(card) + " is out of stock. "
-			if price > GoldForTrade() {
-				replyMsg += fmt.Sprintf("I would buy for %dg, but I don't have that much.", price)
-			} else {
-				replyMsg += fmt.Sprintf("I'm buying for %dg.", price)
+
+	if len(matchedCards) == 0 {
+		replyMsg = fmt.Sprintf("There is no card named %s", args)
+	} else {
+		for i, card := range matchedCards {
+			if i > 0 {
+				replyMsg += "\n"
 			}
 
-		} else {
-			replyMsg = fmt.Sprintf("I'm buying %s for %dg and selling for %dg (%d stocked).", card,
-				s.DeterminePrice(card, 1, true), s.DeterminePrice(card, 1, false), stocked)
+			stocked := Stocks[Bot][card]
+			if stocked == 0 {
+				price := s.DeterminePrice(card, 1, true)
+				replyMsg += string(card) + " is out of stock. "
+				if price > GoldForTrade() {
+					replyMsg += fmt.Sprintf("I would buy %s for %d, but I don't have that much. ", card, price)
+				} else {
+					replyMsg += fmt.Sprintf("I'm buying %s for %d.", card, price)
+				}
+			} else {
+				replyMsg += fmt.Sprintf("I'm buying %s for %d and selling for %d (%d stocked).", card,
+					s.DeterminePrice(card, 1, true), s.DeterminePrice(card, 1, false), stocked)
+			}
 		}
-	default:
-		replyMsg = fmt.Sprintf("Did you mean %s?", orify(matchedCards))
-	}
-
-	if rand.Float64() > 0.95 {
-		replyMsg += " By the way, you can whisper me with 'wtb/wts [list of cards]' to easily check prices and availability for all cards you're interested in."
 	}
 	return
 }
