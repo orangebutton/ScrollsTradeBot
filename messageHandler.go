@@ -14,7 +14,8 @@ func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bo
 
 	// the trade handler has its own message handler
 	// ignore chat messages from trading-x
-	if m.Channel == TradeRoom || strings.HasPrefix(string(m.Channel), "trading-") {
+	if m.From == "Scrolls" || m.Channel == TradeRoom ||
+		strings.HasPrefix(string(m.Channel), "trading-") {
 		return queue
 	}
 
@@ -42,8 +43,7 @@ func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bo
 		forceWhisper = (m.Channel == TradeRoom)
 
 	case "!trade", "!queue":
-		replyMsg = handleTrade(m, queue)
-		queue = append(queue, m.From)
+		queue, replyMsg = handleTrade(m, queue)
 		if len(queue) == 1 {
 			chReadyToTrade <- true
 		}
@@ -53,6 +53,11 @@ func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bo
 		if m.From == Conf.Owner {
 			tokens := strings.SplitN(args, " ", 2)
 			s.Say(Channel(tokens[0]), tokens[1])
+		}
+	case "!whisper", "!w":
+		if m.From == Conf.Owner {
+			tokens := strings.SplitN(args, " ", 2)
+			s.Whisper(Player(tokens[0]), tokens[1])
 		}
 	case "!join":
 		if m.From == Conf.Owner {
@@ -274,10 +279,11 @@ func (s *State) handlePrice(args string) (replyMsg string) {
 	return
 }
 
-func handleTrade(m Message, queue []Player) string {
+func handleTrade(m Message, queue []Player) ([]Player, string) {
+
 	pos := queuePosition(m.From, queue)
 	if pos >= 0 {
-		return fmt.Sprintf("You are already queued for trading. Your position in the queue is %d.", pos)
+		return queue, fmt.Sprintf("You are already queued for trading. Your position in the queue is %d.", pos)
 	}
 
 	replyMsg := ""
@@ -287,7 +293,10 @@ func handleTrade(m Message, queue []Player) string {
 		}
 		replyMsg += fmt.Sprintf("You are now queued for trading. Your position in the queue is %d.", len(queue)-1)
 	}
-	return replyMsg
+
+	queue = append(queue, m.From)
+
+	return queue, replyMsg
 }
 
 func (s *State) handlePreTrade(queue []Player) {
