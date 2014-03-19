@@ -8,7 +8,8 @@ import (
 
 const tradeHelpText string = "Add the scrolls you want to sell on your side. " +
 	"To buy scrolls from me, !add or !remove cards. " +
-	"To find the price of a card use !price, !wtb or !wts. " +
+	"To buy a lot of burns from me use '!add burn 5' " +
+	"To find the price of a card use !price " +
 	"If you want to start over you can always !reset. " +
 	"I can show you how I calculated the !total. " +
 	"You can check the !stock and the !missing cards. " +
@@ -16,11 +17,11 @@ const tradeHelpText string = "Add the scrolls you want to sell on your side. " +
 
 func (s *State) TradeMessageHandler(donation bool, m Message, tradePartner Player, ts TradeStatus) bool {
 
-	command, args := ParseCommandAndArgs(m)
+	command, args := ParseCommandAndArgs(m.Text)
 	switch command {
 	case "!help":
 		s.handleTradeHelp(m.Channel)
-	case "!add":
+	case "!add", "!wtb":
 		s.handleAdd(ts, tradePartner, args)
 	case "!remove":
 		s.handleRemove(args, ts, m.Channel)
@@ -32,8 +33,6 @@ func (s *State) TradeMessageHandler(donation bool, m Message, tradePartner Playe
 		donation = !donation
 		s.handleDonation(donation, m.Channel)
 
-	case "!wtb":
-		s.Say(m.Channel, s.handleWTB(args, m.From))
 	case "!wts":
 		s.Say(m.Channel, s.handleWTS(args))
 	case "!price":
