@@ -37,119 +37,121 @@ func GoldForTrade() int {
 func (s *State) Trade(tradePartner Player) {
 	// Send them a trade invite and see if they accept
 	chTradeStatus := s.initiateTrade(tradePartner)
-	if chTradeStatus != nil {
+	if chTradeStatus == nil {
+		return
+	}
 
-		var ts TradeStatus
+	var ts TradeStatus
 
-		// lets stay in the trade room so that they can send us messages
-		// defer s.LeaveRoom(TradeRoom)
-		lastActivity := time.Now()
-		startTime := time.Now()
+	// lets stay in the trade room so that they can send us messages
+	// defer s.LeaveRoom(TradeRoom)
+	lastActivity := time.Now()
+	startTime := time.Now()
 
-		minuteWarning := false
-		tenSecondWarning := false
-		lastIdleWarning := time.Now()
+	minuteWarning := false
+	tenSecondWarning := false
+	lastIdleWarning := time.Now()
 
-		cardsChanged := false
-		donation := false
+	cardsChanged := false
+	donation := false
 
-		stockBefore := Stocks[Bot]
-		if stockBefore == nil {
-			stockBefore = make(map[Card]int)
-		}
+	stockBefore := Stocks[Bot]
+	if stockBefore == nil {
+		stockBefore = make(map[Card]int)
+	}
 
-		s.Say(TradeRoom, fmt.Sprintf("Welcome %s. This is an automated trading unit. If you don't know what to do, just say '!help'.", tradePartner))
-		s.initFromOldWTBRequest(tradePartner)
+	s.Say(TradeRoom, fmt.Sprintf("Welcome %s. This is an automated trading unit. If you don't know what to do, just say '!help'.", tradePartner))
+	s.handleTradeHelp(TradeRoom)
+	s.initFromOldWTBRequest(tradePartner)
 
-		messages := s.Listen()
-		defer s.Shut(messages)
-		ticker := time.Tick(time.Second)
-		for {
-			select {
-			case <-s.chQuit:
-				log.Printf("Trade quit!")
-				s.chQuit <- true
+	messages := s.Listen()
+	defer s.Shut(messages)
+	ticker := time.Tick(time.Second)
+	for {
+		select {
+		case <-s.chQuit:
+			log.Printf("Trade quit!")
+			s.chQuit <- true
+			return
+		case m := <-messages:
+			if m.From == "Scrolls" && m.Channel == TradeRoom && strings.HasPrefix(m.Text, "Trade ended") {
 				return
-			case m := <-messages:
-				if m.From == "Scrolls" && m.Channel == TradeRoom && strings.HasPrefix(m.Text, "Trade ended") {
-					return
-				}
-				if m.From == tradePartner && m.Channel == TradeRoom {
-					lastActivity = time.Now()
-					donation = s.TradeMessageHandler(donation, m, tradePartner, ts)
-				}
+			}
+			if m.From == tradePartner && m.Channel == TradeRoom {
+				lastActivity = time.Now()
+				donation = s.TradeMessageHandler(donation, m, tradePartner, ts)
+			}
 
-			case newTradeStatus := <-chTradeStatus:
-				oldValueSum := ts.Their.Value + ts.My.Value
+		case newTradeStatus := <-chTradeStatus:
+			oldValueSum := ts.Their.Value + ts.My.Value
 
-				ts = newTradeStatus
-				if ts.Updated {
-					lastActivity = time.Now()
-				}
+			ts = newTradeStatus
+			if ts.Updated {
+				lastActivity = time.Now()
+			}
 
-				if ts.My.Accepted && ts.Their.Accepted {
-					s.finishTrade(donation, tradePartner, ts)
-					s.acquiredOrSoldMessage(stockBefore, ts)
-					//sellExcessInventoryToStore()
+			if ts.My.Accepted && ts.Their.Accepted {
+				s.finishTrade(donation, tradePartner, ts)
+				s.acquiredOrSoldMessage(stockBefore, ts)
+				//sellExcessInventoryToStore()
 
-					return
-				}
+				return
+			}
 
-				for card, num := range ts.Their.Cards {
-					ts.Their.Value += s.DeterminePrice(card, num, true)
-				}
+			for card, num := range ts.Their.Cards {
+				ts.Their.Value += s.DeterminePrice(card, num, true)
+			}
 
-				for card, num := range ts.My.Cards {
-					ts.My.Value += s.DeterminePrice(card, num, false)
-				}
+			for card, num := range ts.My.Cards {
+				ts.My.Value += s.DeterminePrice(card, num, false)
+			}
 
-				if oldValueSum != ts.Their.Value+ts.My.Value {
-					cardsChanged = true
-				}
+			if oldValueSum != ts.Their.Value+ts.My.Value {
+				cardsChanged = true
+			}
 
-				goldNeeded := ts.Their.Value - ts.My.Value + ts.Their.Gold
-				if goldNeeded != ts.My.Gold {
-					if goldNeeded > 0 && GoldForTrade() >= goldNeeded {
-						s.SendRequest(Request{"msg": "TradeSetGold", "gold": goldNeeded})
-					} else if ts.My.Gold != 0 {
-						s.SendRequest(Request{"msg": "TradeSetGold", "gold": 0})
-					}
+			goldNeeded := ts.Their.Value - ts.My.Value + ts.Their.Gold
+			if goldNeeded != ts.My.Gold {
+				if goldNeeded > 0 && GoldForTrade() >= goldNeeded {
+					s.SendRequest(Request{"msg": "TradeSetGold", "gold": goldNeeded})
+				} else if ts.My.Gold != 0 {
+					s.SendRequest(Request{"msg": "TradeSetGold", "gold": 0})
 				}
+			}
 
-			case <-ticker:
-				if time.Now().After(lastActivity.Add(time.Minute)) && time.Now().After(lastIdleWarning.Add(time.Minute)) {
-					s.Say(TradeRoom, "You have been idle for a minute. This trade window will close in 30 seconds unless you interact with it.")
-					lastIdleWarning = time.Now()
-				}
+		case <-ticker:
+			if time.Now().After(lastActivity.Add(time.Minute)) && time.Now().After(lastIdleWarning.Add(time.Minute)) {
+				s.Say(TradeRoom, "You have been idle for a minute. This trade window will close in 30 seconds unless you interact with it.")
+				lastIdleWarning = time.Now()
+			}
 
-				if time.Now().After(lastActivity.Add(time.Minute + 30*time.Second)) {
-					s.Say(TradeRoom, "Time's up!")
-					return
-				}
+			if time.Now().After(lastActivity.Add(time.Minute + 30*time.Second)) {
+				s.Say(TradeRoom, "Time's up!")
+				return
+			}
 
-				if !minuteWarning && time.Now().After(startTime.Add(4*time.Minute)) {
-					s.Say(TradeRoom, "Please finish the trade within the next minute.")
-					minuteWarning = true
-				}
-				if !tenSecondWarning && time.Now().After(startTime.Add(4*time.Minute+50*time.Second)) {
-					s.Say(TradeRoom, "You have 10 seconds left to finish the trade.")
-					tenSecondWarning = true
-				}
-				if time.Now().After(startTime.Add(time.Minute * 5)) {
-					s.Say(TradeRoom, "Time's up!")
-					return
-				}
+			if !minuteWarning && time.Now().After(startTime.Add(4*time.Minute)) {
+				s.Say(TradeRoom, "Please finish the trade within the next minute.")
+				minuteWarning = true
+			}
+			if !tenSecondWarning && time.Now().After(startTime.Add(4*time.Minute+50*time.Second)) {
+				s.Say(TradeRoom, "You have 10 seconds left to finish the trade.")
+				tenSecondWarning = true
+			}
+			if time.Now().After(startTime.Add(time.Minute * 5)) {
+				s.Say(TradeRoom, "Time's up!")
+				return
+			}
 
-				if cardsChanged && time.Now().After(lastActivity.Add(time.Second*2)) {
-					cardsChanged = false
-					s.sayGoldOwed(ts, donation)
-				}
-				canAccept := isFairTrade(donation, ts)
+			if cardsChanged && time.Now().After(lastActivity.Add(time.Second*2)) {
+				cardsChanged = false
+				s.sayGoldOwed(ts, donation)
+			}
+			canAccept := isFairTrade(donation, ts)
 
-				// s.Say(TradeRoom, fmt.Sprintf("%d %d %s %s", myGain, theirGain, canAccept, donation))
-				if canAccept && !ts.My.Accepted && time.Now().After(lastActivity.Add(time.Second*7)) {
-					s.SendRequest(Request{"msg": "TradeAcceptBargain"})
-				}
+			// s.Say(TradeRoom, fmt.Sprintf("%d %d %s %s", myGain, theirGain, canAccept, donation))
+			if canAccept && !ts.My.Accepted && time.Now().After(lastActivity.Add(time.Second*7)) {
+				s.SendRequest(Request{"msg": "TradeAcceptBargain"})
 			}
 		}
 	}
