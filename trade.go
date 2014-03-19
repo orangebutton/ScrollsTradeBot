@@ -34,25 +34,31 @@ func GoldForTrade() int {
 	return Gold / Conf.GoldDivisor
 }
 
-func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
+func (s *State) Trade(tradePartner Player) {
 	// Send them a trade invite and see if they accept
-	chTradeStatus := s.initiateTrade(tradePartner, 40*time.Second)
+	chTradeStatus := s.initiateTrade(tradePartner)
 	if chTradeStatus != nil {
+
+		var ts TradeStatus
+
 		// lets stay in the trade room so that they can send us messages
 		// defer s.LeaveRoom(TradeRoom)
 		lastActivity := time.Now()
 		startTime := time.Now()
-
-		donation := false
 
 		minuteWarning := false
 		tenSecondWarning := false
 		lastIdleWarning := time.Now()
 
 		cardsChanged := false
+		donation := false
+
+		stockBefore := Stocks[Bot]
+		if stockBefore == nil {
+			stockBefore = make(map[Card]int)
+		}
 
 		s.Say(TradeRoom, fmt.Sprintf("Welcome %s. This is an automated trading unit. If you don't know what to do, just say '!help'.", tradePartner))
-
 		s.initFromOldWTBRequest(tradePartner)
 
 		messages := s.Listen()
@@ -83,7 +89,9 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 
 				if ts.My.Accepted && ts.Their.Accepted {
 					s.finishTrade(donation, tradePartner, ts)
+					s.acquiredOrSoldMessage(stockBefore, ts)
 					//sellExcessInventoryToStore()
+
 					return
 				}
 
@@ -145,14 +153,15 @@ func (s *State) Trade(tradePartner Player) (ts TradeStatus) {
 			}
 		}
 	}
-	return
 }
 
-func (s *State) initiateTrade(player Player, timeout time.Duration) chan TradeStatus {
+func (s *State) initiateTrade(player Player) chan TradeStatus {
+
 	s.SendRequest(Request{"msg": "TradeInvite", "profile": PlayerIds[player]})
 	accepted := false
 	TradeRoom = ""
 
+	timeout := 65 * time.Second // the scrolls timeout is about 60 seconds, but add 5 seconds for lags
 	cancel := time.After(timeout)
 	l := s.Listen()
 	defer s.Shut(l)
@@ -279,6 +288,7 @@ func (s *State) sellExcessInventoryToStore() {
 	for _, card := range Libraries[Bot].Cards {
 		cardName := CardTypes[card.TypeId]
 		if !alreadySold[cardName] && card.Tradable &&
+			// prices can never be less than store prices now
 			s.DeterminePrice(cardName, 1, false) <= StoreValue(cardName) {
 
 			alreadySold[cardName] = true
@@ -322,6 +332,29 @@ func isFairTrade(donation bool, ts TradeStatus) bool {
 		}
 	}
 	return canAccept
+}
+
+func (s *State) acquiredOrSoldMessage(stockBefore map[Card]int, ts TradeStatus) {
+	aquired := make([]Card, 0)
+	lost := make([]Card, 0)
+	for card, num := range ts.Their.Cards {
+		if stockBefore[card] == 0 {
+			aquired = append(aquired, card)
+		}
+		stockBefore[card] = stockBefore[card] + num
+	}
+	for card, num := range ts.My.Cards {
+		if stockBefore[card] <= num {
+			lost = append(lost, card)
+		}
+		stockBefore[card] = stockBefore[card] - num
+	}
+	if len(aquired) > 0 {
+		s.Say(Conf.Room, fmt.Sprintf("I've just acquired %s.", andify(aquired)))
+	}
+	if len(lost) > 0 {
+		s.Say(Conf.Room, fmt.Sprintf("I've just sold my last %s.", andify(lost)))
+	}
 }
 
 func logTrade(ts TradeStatus) {

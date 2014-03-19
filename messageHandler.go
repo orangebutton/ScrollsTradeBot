@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-const helpText string = "You can whisper me WTS or WTB requests. " +
-	"If you're interested in trading, you can '!trade' with me. " +
-	"You can also check the '!stock' and what is '!missing.' " +
+const helpText string = "You can whisper me 'wtb [card], [card]' or 'wts [card], [card]' requests. " +
+	"If you're interested in trading, you can 'trade' with me. " +
+	"You can also check the 'stock' and what is 'missing'. " +
 	"Prices are based on inventory. To get good deals on cards check my prices often. "
 
 func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bool) []Player {
@@ -287,6 +287,7 @@ func handleTrade(m Message, queue []Player) ([]Player, string) {
 	}
 
 	replyMsg := ""
+	queue = append(queue, m.From)
 	if len(queue) > 0 {
 		if m.Channel != "WHISPER" {
 			replyMsg = fmt.Sprintf("%s: ", m.From)
@@ -294,44 +295,7 @@ func handleTrade(m Message, queue []Player) ([]Player, string) {
 		replyMsg += fmt.Sprintf("You are now queued for trading. Your position in the queue is %d.", len(queue)-1)
 	}
 
-	queue = append(queue, m.From)
-
 	return queue, replyMsg
-}
-
-func (s *State) handlePreTrade(queue []Player) {
-	if len(queue) > 1 {
-		waiting := make([]string, len(queue)-1)
-		for i, name := range queue[1:] {
-			waiting[i] = string(name)
-		}
-		s.Say(Conf.Room, fmt.Sprintf("Now trading with [%s] < %s", queue[0], strings.Join(waiting, " < ")))
-	} else {
-		s.Say(Conf.Room, fmt.Sprintf("Now trading with [%s].", queue[0]))
-	}
-}
-
-func (s *State) handlePostTrade(stockBefore map[Card]int, ts TradeStatus) {
-	aquired := make([]Card, 0)
-	lost := make([]Card, 0)
-	for card, num := range ts.Their.Cards {
-		if stockBefore[card] == 0 {
-			aquired = append(aquired, card)
-		}
-		stockBefore[card] = stockBefore[card] + num
-	}
-	for card, num := range ts.My.Cards {
-		if stockBefore[card] <= num {
-			lost = append(lost, card)
-		}
-		stockBefore[card] = stockBefore[card] - num
-	}
-	if len(aquired) > 0 {
-		s.Say(Conf.Room, fmt.Sprintf("I've just aquired %s.", andify(aquired)))
-	}
-	if len(lost) > 0 {
-		s.Say(Conf.Room, fmt.Sprintf("I've just sold my last %s.", andify(lost)))
-	}
 }
 
 func queuePosition(target Player, queue []Player) int {

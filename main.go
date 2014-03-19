@@ -1,12 +1,17 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 )
 
-const helloMessage = "selling - tons of cards - type '!help'' in the autobots room to find out how trade with me."
+//const helloMessage = "fixed pricing"
+//const helloMessage = "selling - lots of cards - fixed even more bugs - type 'help'' in the autobots room to find out how trade with me."
+
+const helloMessage = "selling - lots of cards - more generous buy prices now - type 'help' in the autobots room to find out how trade with me."
 
 var WTBrequests = make(map[Player]map[Card]int)
 var Bot Player
@@ -64,13 +69,8 @@ func startBot(email, password, helloMessage string) {
 				return
 			case <-chReadyToTrade:
 				go func() {
-					s.handlePreTrade(queue)
-					stockBefore := Stocks[Bot]
-					if stockBefore == nil {
-						stockBefore = make(map[Card]int)
-					}
-					tradeStatus := s.Trade(queue[0])
-					s.handlePostTrade(stockBefore, tradeStatus)
+					s.sayTradingParter(queue)
+					s.Trade(queue[0])
 					queue = queue[1:]
 					if len(queue) == 0 {
 						s.Say(Conf.Room, "Finished trading.")
@@ -117,5 +117,17 @@ func startBot(email, password, helloMessage string) {
 func deny(err error) {
 	if err != nil {
 		panic(err)
+	}
+}
+
+func (s *State) sayTradingParter(queue []Player) {
+	if len(queue) > 1 {
+		waiting := make([]string, len(queue)-1)
+		for i, name := range queue[1:] {
+			waiting[i] = string(name)
+		}
+		s.Say(Conf.Room, fmt.Sprintf("Now trading with [%s] < %s", queue[0], strings.Join(waiting, " < ")))
+	} else {
+		s.Say(Conf.Room, fmt.Sprintf("Now trading with [%s].", queue[0]))
 	}
 }
