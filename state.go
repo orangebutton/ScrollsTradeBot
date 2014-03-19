@@ -120,14 +120,14 @@ func (s *State) Whisper(player Player, text string) {
 
 func (s *State) HandleReply(reply []byte) bool {
 	if len(reply) < 2 {
-		log.Println("reply is too short\n")
+		log.Printf("Error: reply is too short %s\n", reply)
 		return false
 	}
 
 	var m Reply
 	err := json.Unmarshal(reply, &m)
 	if err != nil {
-		log.Printf("%s\n", err)
+		log.Printf("Error: could not unmarshal reply %s\n", err)
 		return false
 	}
 
@@ -256,9 +256,7 @@ func (s *State) HandleReply(reply []byte) bool {
 	case "RoomChatMessage":
 		var v MRoomChatMessage
 		json.Unmarshal(reply, &v)
-		// if v.From != Bot {
 		s.chMessages <- Message{v.Text, v.From, Channel(v.RoomName)}
-		// }
 
 	case "RoomEnter":
 		var v MRoomEnter
@@ -287,9 +285,7 @@ func (s *State) HandleReply(reply []byte) bool {
 	case "Whisper":
 		var v MWhisper
 		json.Unmarshal(reply, &v)
-		if v.From != Bot {
-			s.chMessages <- Message{v.Text, v.From, Channel("WHISPER")}
-		}
+		s.chMessages <- Message{v.Text, v.From, Channel("WHISPER")}
 
 	default:
 		fmt.Println(string(reply))
