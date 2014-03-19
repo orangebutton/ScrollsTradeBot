@@ -11,7 +11,7 @@ const helpText string = "You can whisper me 'wtb' or 'wts' requests. " +
 	"You can also check the 'stock' and what is 'missing'. " +
 	"Prices are based on inventory. To get good deals on cards check my prices often. "
 
-func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bool) []Player {
+func (s *State) HandleMessages(m Message, queue chan<- Player) {
 
 	// the trade handler has its own message handler
 	// ignore chat messages from trading-x
@@ -20,7 +20,7 @@ func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bo
 		m.From == "Great_Marcoosai" || // banned
 		m.Channel == TradeRoom ||
 		strings.HasPrefix(string(m.Channel), "trading-") {
-		return queue
+		return
 	}
 
 	forceWhisper := false
@@ -46,10 +46,7 @@ func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bo
 		replyMsg = handleMissing()
 		forceWhisper = (m.Channel == TradeRoom)
 	case "!trade", "!queue":
-		queue, replyMsg = handleTrade(m, queue)
-		if len(queue) == 1 {
-			chReadyToTrade <- true
-		}
+		replyMsg = handleTrade(m, queue)
 	default:
 		s.handleOwnerCommands(command, args, m.From)
 	}
@@ -57,7 +54,6 @@ func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bo
 	if replyMsg != "" {
 		s.sayReplay(replyMsg, forceWhisper, m)
 	}
-	return queue
 }
 
 func (s *State) handleOwnerCommands(command, args string, from Player) {
@@ -281,15 +277,15 @@ func (s *State) handlePrice(args string) (replyMsg string) {
 	return
 }
 
-func handleTrade(m Message, queue []Player) ([]Player, string) {
+func handleTrade(m Message, queue chan<- Player) string {
 
-	pos := queuePosition(m.From, queue)
-	if pos >= 0 {
-		return queue, fmt.Sprintf("You are already queued for trading. Your position in the queue is %d.", pos)
-	}
+	//if inQueue(m.From, queue) {
+	//	return fmt.Sprintf("You are already queued for trading.")
+	//}
 
 	replyMsg := ""
-	queue = append(queue, m.From)
+
+	queue <- m.From
 	if len(queue) > 1 {
 		if m.Channel != "WHISPER" {
 			replyMsg = fmt.Sprintf("%s: ", m.From)
@@ -297,16 +293,7 @@ func handleTrade(m Message, queue []Player) ([]Player, string) {
 		replyMsg += fmt.Sprintf("You are now queued for trading. Your position in the queue is %d.", len(queue)-1)
 	}
 
-	return queue, replyMsg
-}
-
-func queuePosition(target Player, queue []Player) int {
-	for i, player := range queue {
-		if player == target {
-			return i
-		}
-	}
-	return -1
+	return replyMsg
 }
 
 func (s *State) sayReplay(replyMsg string, forceWhisper bool, m Message) {

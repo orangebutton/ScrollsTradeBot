@@ -35,6 +35,8 @@ func GoldForTrade() int {
 }
 
 func (s *State) Trade(tradePartner Player) {
+	s.Say(Conf.Room, fmt.Sprintf("Now trading with [%s].", tradePartner))
+
 	// Send them a trade invite and see if they accept
 	chTradeStatus := s.initiateTrade(tradePartner)
 	if chTradeStatus == nil {
@@ -60,8 +62,7 @@ func (s *State) Trade(tradePartner Player) {
 		stockBefore = make(map[Card]int)
 	}
 
-	s.Say(TradeRoom, fmt.Sprintf("Welcome %s. This is an automated trading unit. If you don't know what to do, just say '!help'.", tradePartner))
-	s.handleTradeHelp(TradeRoom)
+	s.Say(TradeRoom, fmt.Sprintf("Welcome %s. This is an automated trading unit. "+tradeHelpText, tradePartner))
 	s.initFromOldWTBRequest(tradePartner)
 
 	messages := s.Listen()
