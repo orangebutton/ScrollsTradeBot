@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-//const helloMessage = "fixed pricing"
-//const helloMessage = "selling - lots of cards - fixed even more bugs - type 'help'' in the autobots room to find out how trade with me."
+//const HelloMessage = "fixed pricing"
+//const HelloMessage = "wts/wtb - lots of cards - to trade with me, join room autobots and type help"
 
-const helloMessage = "selling - lots of cards - more generous buy prices now - type 'help' in the autobots room to find out how trade with me."
+const HelloMessage = "wts/wtb - lots of cards - to trade with me, join room autobots and type help"
 
 var WTBrequests = make(map[Player]map[Card]int)
 var Bot Player
@@ -35,7 +35,7 @@ func main() {
 	}
 
 	for {
-		startBot(Conf.Email, Conf.Password, helloMessage)
+		startBot(Conf.Email, Conf.Password, HelloMessage)
 	}
 }
 
