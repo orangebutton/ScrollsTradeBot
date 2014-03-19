@@ -5,8 +5,9 @@ import (
 	"strings"
 )
 
-const helpText string = "You can whisper me 'wtb [card], [card]' or 'wts [card], [card]' requests. " +
-	"If you're interested in trading, you can 'trade' with me. " +
+const helpText string = "You can whisper me 'wtb' or 'wts' requests. " +
+	"Those commands can also use lists of cards separated by commas. " +
+	"When you are ready you can 'trade' with me. " +
 	"You can also check the 'stock' and what is 'missing'. " +
 	"Prices are based on inventory. To get good deals on cards check my prices often. "
 
@@ -14,14 +15,17 @@ func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bo
 
 	// the trade handler has its own message handler
 	// ignore chat messages from trading-x
-	if m.From == "Scrolls" || m.Channel == TradeRoom ||
+	if m.From == "Scrolls" ||
+		m.From == Bot ||
+		m.From == "Great_Marcoosai" || // banned
+		m.Channel == TradeRoom ||
 		strings.HasPrefix(string(m.Channel), "trading-") {
 		return queue
 	}
 
 	forceWhisper := false
 	replyMsg := ""
-	command, args := ParseCommandAndArgs(m)
+	command, args := ParseCommandAndArgs(m.Text)
 
 	switch command {
 	case "!help":
@@ -41,36 +45,14 @@ func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bo
 	case "!missing":
 		replyMsg = handleMissing()
 		forceWhisper = (m.Channel == TradeRoom)
-
 	case "!trade", "!queue":
 		queue, replyMsg = handleTrade(m, queue)
 		if len(queue) == 1 {
 			chReadyToTrade <- true
 		}
-
-	// superuser commands
-	case "!say":
-		if m.From == Conf.Owner {
-			tokens := strings.SplitN(args, " ", 2)
-			s.Say(Channel(tokens[0]), tokens[1])
-		}
-	case "!whisper", "!w":
-		if m.From == Conf.Owner {
-			tokens := strings.SplitN(args, " ", 2)
-			s.Whisper(Player(tokens[0]), tokens[1])
-		}
-	case "!join":
-		if m.From == Conf.Owner {
-			s.JoinRoom(Channel(args))
-		}
-	case "!leave":
-		if m.From == Conf.Owner {
-			s.LeaveRoom(Channel(args))
-		}
-
-		//case "!uptime":
-		//	replyMsg = fmt.Sprintf("Up since %s", time.Since(upSince))
-	} // end switch
+	default:
+		s.handleOwnerCommands(command, args, m.From)
+	}
 
 	if replyMsg != "" {
 		s.sayReplay(replyMsg, forceWhisper, m)
@@ -78,13 +60,33 @@ func (s *State) HandleMessages(m Message, queue []Player, chReadyToTrade chan bo
 	return queue
 }
 
-func ParseCommandAndArgs(m Message) (command, args string) {
+func (s *State) handleOwnerCommands(command, args string, from Player) {
 
-	if m.From == "Great_Marcoosai" {
-		return "", ""
+	if from != Conf.Owner {
+		return
 	}
+	switch command {
+	case "!say":
+		tokens := strings.SplitN(args, " ", 2)
+		s.Say(Channel(tokens[0]), tokens[1])
+	case "!whisper", "!w":
+		tokens := strings.SplitN(args, " ", 2)
+		s.Whisper(Player(tokens[0]), tokens[1])
+	case "!hello":
+		s.Say(Channel("trading-1"), HelloMessage)
+		s.Say("trading-2", HelloMessage)
+	case "!join":
+		s.JoinRoom(Channel(args))
+	case "!leave":
+		s.LeaveRoom(Channel(args))
+	}
+	//case "!uptime":
+	//	replyMsg = fmt.Sprintf("Up since %s", time.Since(upSince))
+}
 
-	text := strings.TrimSpace(strings.ToLower(m.Text))
+func ParseCommandAndArgs(text string) (command, args string) {
+
+	text = strings.TrimSpace(strings.ToLower(text))
 	strs := strings.SplitN(text, " ", 2)
 	command = strings.TrimSpace(strs[0])
 	if len(strs) > 1 {
@@ -288,7 +290,7 @@ func handleTrade(m Message, queue []Player) ([]Player, string) {
 
 	replyMsg := ""
 	queue = append(queue, m.From)
-	if len(queue) > 0 {
+	if len(queue) > 1 {
 		if m.Channel != "WHISPER" {
 			replyMsg = fmt.Sprintf("%s: ", m.From)
 		}
