@@ -1,4 +1,3 @@
-// prices
 package main
 
 import (
@@ -12,7 +11,7 @@ type Price struct{ Buy, Sell int }
 
 var SGPrices = make(map[Card]Price)
 
-// these prices are set by the store
+// Prices set by the store
 func StoreValue(card Card) int {
 	switch CardRarities[card] {
 	case 0:
@@ -77,8 +76,7 @@ func (s *State) DeterminePrice(card Card, num int, buy bool) int {
 			return SGPrices[card].Sell * num
 		}
 	} else {
-		// return clockworkPricing(card, num, buy)
-		return autobotsPricing(card, num, buy)
+		return strategicBotPricing(card, num, buy)
 	}
 }
 
@@ -98,7 +96,7 @@ func pricingBasedOnInventory(card Card, num int, buy bool) int {
 	return int(price)
 }
 
-func autobotsPricing(card Card, num int, buy bool) int {
+func strategicBotPricing(card Card, num int, buy bool) int {
 	price := 0
 	if buy {
 		price = num * StoreValue(card)

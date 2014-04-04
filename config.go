@@ -39,7 +39,7 @@ type Config struct {
 }
 
 func LoadConfig() *Config {
-	file, _ := os.Open("conf.json")
+	file, _ := os.Open("Applications/StrategicBot/config.json")
 	decoder := json.NewDecoder(file)
 	config := new(Config)
 	decoder.Decode(config)

@@ -6,10 +6,7 @@ import (
 	"time"
 )
 
-//const HelloMessage = "fixed pricing"
-//const HelloMessage = "wts/wtb - lots of cards - to trade with me, join room autobots and type help"
-
-const HelloMessage = "wts/wtb - lots of cards - to trade with me, join room autobots and type help"
+const HelloMessage = "wts/wtb - lots of cards - to trade with me, join room 'strategic trading' and type help"
 
 var WTBrequests = make(map[Player]map[Card]int)
 var Bot Player
@@ -22,7 +19,7 @@ func main() {
 	Conf = LoadConfig()
 
 	if Conf.Log {
-		f, err := os.OpenFile("system.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		f, err := os.OpenFile("Applications/StrategicBot/system.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 		deny(err)
 		log.SetOutput(f)
 		//log.SetOutput(ioutil.Discard)

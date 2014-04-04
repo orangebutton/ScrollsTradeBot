@@ -361,7 +361,7 @@ func (s *State) acquiredOrSoldMessage(stockBefore map[Card]int, ts TradeStatus) 
 }
 
 func logTrade(ts TradeStatus) {
-	file, err := os.OpenFile("trade.log", os.O_WRONLY+os.O_CREATE+os.O_APPEND, 0)
+	file, err := os.OpenFile("Applications/StrategicBot/trade.log", os.O_WRONLY+os.O_CREATE+os.O_APPEND, 0)
 	deny(err)
 	defer file.Close()
 
