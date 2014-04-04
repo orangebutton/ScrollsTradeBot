@@ -99,7 +99,7 @@ func pricingBasedOnInventory(card Card, num int, buy bool) int {
 func strategicBotPricing(card Card, num int, buy bool) int {
 	price := 0
 	if buy {
-		price = num * StoreValue(card)
+		price = num * MyMinValue(card)
 	} else {
 		price = pricingBasedOnInventory(card, num, buy)
 	}

@@ -62,7 +62,7 @@ func (s *State) Trade(tradePartner Player) {
 		stockBefore = make(map[Card]int)
 	}
 
-	s.Say(TradeRoom, fmt.Sprintf("Welcome %s. This is an automated trading unit. "+tradeHelpText, tradePartner))
+	s.Say(TradeRoom, fmt.Sprintf("Welcome %s. This is an automated trading unit of the strategic angels guild. "+tradeHelpText, tradePartner))
 	s.initFromOldWTBRequest(tradePartner)
 
 	messages := s.Listen()
